@@ -3,4 +3,4 @@ mono: 5.4.0
 dotnet: 2.0.0
 dist: trusty
 script:
- - ./build.sh ws-package
+ - ./build.sh ws-package -ef verbose
