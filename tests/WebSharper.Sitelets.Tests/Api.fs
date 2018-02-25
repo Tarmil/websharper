@@ -108,7 +108,7 @@ module Api =
                     Success None
                 | false, _ -> Failure "Person not found."
 
-    let ApiContent (ctx: Context<Action>) (action: Action) : Async<Content<Action>> =
+    let ApiContent (ctx: Context<Action>) (action: Action) : Content<Action> =
         match action with
         | GetPerson id ->
             Content.Json (ApplicationLogic.getPerson id)

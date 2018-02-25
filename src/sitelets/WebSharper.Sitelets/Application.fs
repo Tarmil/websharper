@@ -38,23 +38,17 @@ type Application =
 
     static member MultiPage f = Sitelet.Infer f
 
-    static member SinglePage (f: Context<SPA.EndPoint> -> Async<Content<SPA.EndPoint>>) =
+    static member SinglePage (f: Context<SPA.EndPoint> -> Content<SPA.EndPoint>) =
         {
             Router = Router.Single SPA.EndPoint.Home "/"
-            Controller =
-                { Handle = fun SPA.EndPoint.Home ->
-                    Content.CustomContentAsync <| fun ctx -> async {
-                        let! x = f ctx
-                        return! Content.ToResponse x ctx
-                    }
-                }
+            Controller = { Handle = fun SPA.EndPoint.Home -> Content.FromContext f }
         }
 
     static member Text (t: Context<SPA.EndPoint> -> string) : Sitelet<SPA.EndPoint> =
         Application.SinglePage (fun context -> Content.Text (t context))
 
     static member SinglePage (f: Func<Context<SPA.EndPoint>, Task<Content<SPA.EndPoint>>>) : Sitelet<SPA.EndPoint> =
-        Application.SinglePage (fun ctx -> f.Invoke ctx |> Async.AwaitTask)
+        Application.SinglePage (fun ctx -> f.Invoke ctx |> Content.FromTask)
 
     static member MultiPage (f: Func<Context<'EndPoint>, 'EndPoint, Task<Content<'EndPoint>>>) : Sitelet<'EndPoint> =
-        Application.MultiPage (fun ctx ep -> f.Invoke(ctx, ep) |> Async.AwaitTask)
+        Application.MultiPage (fun ctx ep -> f.Invoke(ctx, ep) |> Content.FromTask)

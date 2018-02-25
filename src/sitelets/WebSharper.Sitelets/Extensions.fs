@@ -21,11 +21,12 @@
 /// Implements utilities for use by the current assembly.
 namespace WebSharper.Sitelets
 
+open System.Diagnostics
+open System.Threading.Tasks
 open WebSharper
 
 [<AutoOpen>]
 module internal Extensions =
-    open System.Diagnostics
 
     let private source =
         TraceSource("WebSharper", SourceLevels.All)
@@ -58,3 +59,35 @@ module internal Extensions =
     [<Inline>]
     let internal ofObjNoConstraint (x: 'T) =
         if obj.ReferenceEquals(x, null) then None else Some x
+
+    type Task<'A> with
+
+        member this.CopyInto(tcs: TaskCompletionSource<'A>) =
+            if this.IsFaulted then tcs.TrySetException(this.Exception.InnerExceptions) |> ignore
+            elif this.IsCanceled then tcs.TrySetCanceled() |> ignore
+            else tcs.TrySetResult(this.Result) |> ignore
+
+        member t.Map (f: 'A -> 'B) =
+            t.ContinueWith(
+                (fun (t: Task<'A>) -> f t.Result),
+                TaskContinuationOptions.OnlyOnRanToCompletion
+            )
+
+        // https://blogs.msdn.microsoft.com/pfxteam/2010/11/21/processing-sequences-of-asynchronous-operations-with-tasks/
+        member this.Bind(next: 'T -> Task<'U>) : Task<'U> =
+            let tcs = new TaskCompletionSource<'U>()
+            this.ContinueWith(
+                (fun (t: Task<'T>) ->
+                    if t.IsFaulted then tcs.TrySetException(t.Exception.InnerExceptions) |> ignore
+                    elif t.IsCanceled then tcs.TrySetCanceled() |> ignore
+                    else
+                        try
+                            match next(t.Result) with
+                            | null -> tcs.TrySetCanceled() |> ignore
+                            | n -> n.ContinueWith(fun (n: Task<'U>) -> n.CopyInto(tcs)) |> ignore
+                        with e ->
+                            tcs.TrySetException(e) |> ignore
+                ),
+                TaskContinuationOptions.ExecuteSynchronously
+            ) |> ignore
+            tcs.Task

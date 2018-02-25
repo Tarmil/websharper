@@ -33,10 +33,10 @@ open WebSharper.Sitelets
 [<Class>]
 type Application =
     /// Create a multi-page application.
-    static member MultiPage : (Context<'EndPoint> -> 'EndPoint -> Async<Content<'EndPoint>>) -> Sitelet<'EndPoint>
+    static member MultiPage : (Context<'EndPoint> -> 'EndPoint -> Content<'EndPoint>) -> Sitelet<'EndPoint>
 
     /// Create a single-page HTML application.
-    static member SinglePage : (Context<SPA.EndPoint> -> Async<Content<SPA.EndPoint>>) -> Sitelet<SPA.EndPoint>
+    static member SinglePage : (Context<SPA.EndPoint> -> Content<SPA.EndPoint>) -> Sitelet<SPA.EndPoint>
 
     /// Create a single-page application that returns text.
     static member Text : (Context<SPA.EndPoint> -> string) -> Sitelet<SPA.EndPoint>

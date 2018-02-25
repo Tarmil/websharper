@@ -62,7 +62,7 @@ module Sitelet =
     val Empty<'T when 'T : equality> : Sitelet<'T>
 
     /// Creates a WebSharper.Sitelet using the given router and handler function.
-    val New<'T when 'T : equality> : router: IRouter<'T> -> handle: (Context<'T> -> 'T -> Async<Content<'T>>) -> Sitelet<'T>
+    val New<'T when 'T : equality> : router: IRouter<'T> -> handle: (Context<'T> -> 'T -> Content<'T>) -> Sitelet<'T>
 
     /// Represents filters for protecting sitelets.
     type Filter<'T> =
@@ -82,7 +82,7 @@ module Sitelet =
     val Content<'T when 'T : equality> :
         location: string ->
         endpoint: 'T ->
-        cnt: (Context<'T> -> Async<Content<'T>>) ->
+        cnt: (Context<'T> -> Content<'T>) ->
         Sitelet<'T>
 
     /// Maps over the sitelet endpoint type. Requires a bijection.
@@ -135,21 +135,21 @@ module Sitelet =
         sitelet: Sitelet<obj> -> Sitelet<'T>
 
     /// Constructs a sitelet with an inferred router and a given controller function.
-    val Infer<'T when 'T : equality> : (Context<'T> -> 'T -> Async<Content<'T>>) -> Sitelet<'T>
+    val Infer<'T when 'T : equality> : (Context<'T> -> 'T -> Content<'T>) -> Sitelet<'T>
 
     /// Constructs a sitelet with an inferred router and a given controller function.
     val InferWithCustomErrors<'T when 'T : equality>
-        : (Context<'T> -> ParseRequestResult<'T> -> Async<Content<'T>>)
+        : (Context<'T> -> ParseRequestResult<'T> -> Content<'T>)
         -> Sitelet<ParseRequestResult<'T>>
 
     /// Constructs a partial sitelet with an inferred router and a given controller function.
     val InferPartial<'T1, 'T2 when 'T1 : equality and 'T2 : equality> :
-        ('T1 -> 'T2) -> ('T2 -> 'T1 option) -> (Context<'T2> -> 'T1 -> Async<Content<'T2>>) -> Sitelet<'T2>
+        ('T1 -> 'T2) -> ('T2 -> 'T1 option) -> (Context<'T2> -> 'T1 -> Content<'T2>) -> Sitelet<'T2>
 
     /// Constructs a partial sitelet with an inferred router and a given controller function.
     /// The actions covered by this sitelet correspond to the given union case.
     val InferPartialInUnion<'T1, 'T2 when 'T1 : equality and 'T2 : equality> :
-        Expr<'T1 -> 'T2> -> (Context<'T2> -> 'T1 -> Async<Content<'T2>>) -> Sitelet<'T2>
+        Expr<'T1 -> 'T2> -> (Context<'T2> -> 'T1 -> Content<'T2>) -> Sitelet<'T2>
 
 type RouteHandler<'T> = delegate of Context<obj> * 'T -> Task<CSharpContent> 
 

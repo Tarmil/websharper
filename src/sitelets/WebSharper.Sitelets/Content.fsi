@@ -21,19 +21,18 @@
 namespace WebSharper.Sitelets
 
 open System
+open System.Threading.Tasks
 open WebSharper
 
-/// Represents server responses to actions. The Page response is special-cased
-/// for combinators to have access to it.
-[<CompiledName "FSharpContent">]
-type Content<'Action> =
-    | [<Obsolete "Use Content.Custom">]
-      CustomContent of (Context<'Action> -> Http.Response)
-    | [<Obsolete "Use Content.Custom">]
-      CustomContentAsync of (Context<'Action> -> Async<Http.Response>)
+/// Represents the server response to an endpoint.
+[<Struct; CompiledName "FSharpContent">]
+type Content<'T> =
+    | ConstantContent of constantResponse: Http.Response
+    | CustomContent of response: (Context<'T> -> Http.Response)
+    | CustomContentAsync of responseAsync: (Context<'T> -> Task<Http.Response>)
 
     /// Creates a JSON content from the given object.
-    static member Json : 'U -> Async<Content<'Action>>
+    static member Json : 'U -> Content<'T>
 
     /// Creates an HTML content.
     static member Page
@@ -41,115 +40,109 @@ type Content<'Action> =
         * ?Head: #seq<#Web.INode>
         * ?Title: string
         * ?Doctype: string
-        -> Async<Content<'Action>>
+        -> Content<'T>
 
     /// Creates an HTML content.
-    static member Page : Page -> Async<Content<'Action>>
+    static member Page : Page -> Content<'T>
 
     /// Creates a plain text content.
-    static member Text : string * ?encoding: System.Text.Encoding -> Async<Content<'Action>>
+    static member Text : string * ?encoding: System.Text.Encoding -> Content<'T>
 
     /// Creates a content that serves a file from disk.
-    static member File : path: string * ?AllowOutsideRootFolder: bool * ?ContentType: string -> Async<Content<'Action>>
+    static member File : path: string * ?AllowOutsideRootFolder: bool * ?ContentType: string -> Content<'T>
 
     /// Creates a custom content.
-    static member Custom : Http.Response -> Async<Content<'Action>>
+    static member Custom : Http.Response -> Content<'T>
 
     /// Creates a custom content.
     static member Custom
         : ?Status: Http.Status
         * ?Headers: seq<Http.Header>
         * ?WriteBody: (System.IO.Stream -> unit)
-        -> Async<Content<'Action>>
+        -> Content<'T>
 
 /// Provides combinators for modifying content.
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module Content =
 
     /// Creates Content that depends on the Sitelet context.
-    val FromContext : (Context<'T> -> Async<Content<'T>>) -> Async<Content<'T>>
+    val FromContext : (Context<'T> -> Content<'T>) -> Content<'T>
 
     /// Generates an HTTP response.
     val ToResponse<'T> : Content<'T> -> Context<'T> -> Async<Http.Response>
 
     /// Generates an HTTP response.
-    [<Obsolete "Use ToResponse">]
-    val ToResponseAsync<'T> : Content<'T> -> Context<'T> -> Async<Http.Response>
+    val ToResponseTask<'T> : Content<'T> -> Context<'T> -> Task<Http.Response>
 
     /// Wraps an asynchronous content.
     val FromAsync<'T> : Async<Content<'T>> -> Content<'T>
 
-    /// Generates JSON content from the given object.
-    [<Obsolete "Use Content.Json">]
-    val JsonContent<'T, 'U> : (Context<'T> -> 'U) -> Content<'T>
-
-    /// Generates JSON content from the given object.
-    [<Obsolete "Use Content.Json">]
-    val JsonContentAsync<'T, 'U> : (Context<'T> -> Async<'U>) -> Content<'T>
+    /// Wraps an asynchronous content.
+    val FromTask<'T> : Task<Content<'T>> -> Content<'T>
 
     /// Modify the response of a content. Transforms any
     /// content to 'CustomContent'.
-    val MapResponse<'T> : (Http.Response -> Http.Response) -> Async<Content<'T>> -> Async<Content<'T>>
+    val MapResponse<'T> : (Http.Response -> Http.Response) -> Content<'T> -> Content<'T>
 
     /// Modify the response of a content. Transforms any
     /// content to 'CustomContent'.
-    val MapResponseAsync<'T> : (Http.Response -> Async<Http.Response>) -> Async<Content<'T>> -> Async<Content<'T>>
+    val MapResponseAsync<'T> : (Http.Response -> Async<Http.Response>) -> Content<'T> -> Content<'T>
 
     /// Add headers to the generated response. Transforms any
     /// content to 'CustomContent'.
-    val WithHeaders<'T> : seq<Http.Header> -> Async<Content<'T>> -> Async<Content<'T>>
+    val WithHeaders<'T> : seq<Http.Header> -> Content<'T> -> Content<'T>
 
     /// Add a header to the generated response. Transforms any
     /// content to 'CustomContent'.
-    val WithHeader<'T> : name: string -> value: string -> Async<Content<'T>> -> Async<Content<'T>>
+    val WithHeader<'T> : name: string -> value: string -> Content<'T> -> Content<'T>
 
     /// Set the Content-Type header.
-    val WithContentType<'T> : string -> Async<Content<'T>> -> Async<Content<'T>>
+    val WithContentType<'T> : string -> Content<'T> -> Content<'T>
 
     /// Replace the headers of the generated response. Transforms any
     /// content to 'CustomContent'.
-    val SetHeaders<'T> : seq<Http.Header> -> Async<Content<'T>> -> Async<Content<'T>>
+    val SetHeaders<'T> : seq<Http.Header> -> Content<'T> -> Content<'T>
 
     /// Set the status of the generated response.
     /// Transforms any content to 'CustomContent'.
-    val SetStatus<'T> : status: Http.Status -> Async<Content<'T>> -> Async<Content<'T>>
+    val SetStatus<'T> : status: Http.Status -> Content<'T> -> Content<'T>
 
     /// Set the body writing function of the generated response.
     /// Transforms any content to 'CustomContent'.
-    val SetBody<'T> : writeBody: (System.IO.Stream -> unit) -> Async<Content<'T>> -> Async<Content<'T>>
+    val SetBody<'T> : writeBody: (System.IO.Stream -> unit) -> Content<'T> -> Content<'T>
 
     /// Redirects permanently (301 Moved Permanently) to a given action.
-    val RedirectPermanent<'T> : action: 'T -> Async<Content<'T>>
+    val RedirectPermanent<'T> : action: 'T -> Content<'T>
 
     /// Redirects permanently (301 Moved Permanently) to a given URL.
-    val RedirectPermanentToUrl : url: string -> Async<Content<'T>>
+    val RedirectPermanentToUrl : url: string -> Content<'T>
 
     /// Redirects temporarily (307 Redirect Temporary) to a given action.
-    val RedirectTemporary<'T> : action: 'T -> Async<Content<'T>>
+    val RedirectTemporary<'T> : action: 'T -> Content<'T>
 
     /// Redirects temporarily (307 Redirect Temporary) to a given URL.
-    val RedirectTemporaryToUrl : url: string -> Async<Content<'T>>
+    val RedirectTemporaryToUrl : url: string -> Content<'T>
 
     /// Constructs a 401 Unauthorized response.
-    val Unauthorized<'T> : Async<Content<'T>>
+    val Unauthorized<'T> : Content<'T>
 
     /// Constructs a 403 Forbidden response.
-    val Forbidden<'T> : Async<Content<'T>>
+    val Forbidden<'T> : Content<'T>
 
     /// Constructs a 404 Not Found response.
-    val NotFound<'T> : Async<Content<'T>>
+    val NotFound<'T> : Content<'T>
 
     /// Constructs a 501 Not Implemented response.
-    val NotImplemented<'T> : Async<Content<'T>>
+    val NotImplemented<'T> : Content<'T>
 
     /// Constructs a 500 Server Error response.
-    val ServerError<'T> : Async<Content<'T>>
+    val ServerError<'T> : Content<'T>
 
     /// Constructs a 405 Method Not Allowed response.
-    val MethodNotAllowed<'T> : Async<Content<'T>>
+    val MethodNotAllowed<'T> : Content<'T>
 
     /// Constructs a 200 Ok response with empty body.
-    val Ok<'T> : Async<Content<'T>>
+    val Ok<'T> : Content<'T>
 
     type RenderedResources =
         {
@@ -159,6 +152,25 @@ module Content =
         }
 
         member Item : string -> string with get
+
+[<Class>]
+type ContentBuilder =
+    member Bind : Async<'U> * ('U -> Content<'T>) -> Content<'T>
+    member Bind : Task<'U> * ('U -> Content<'T>) -> Content<'T>
+    member Return : Content<'T> -> Content<'T>
+    member ReturnFrom : Content<'T> -> Content<'T>
+    member Delay : f: (unit -> Content<'T>) -> Content<'T>
+    member TryFinally : Content<'T> * (unit -> unit) -> Content<'T>
+    member TryWith : Content<'T> * (exn -> Content<'T>) -> Content<'T>
+// TODO:
+//    member For : seq<'U> * ('U -> Content<'T>) -> Content<'T>
+//    member While : (unit -> bool) * Content<'T> -> Content<'T>
+//    member Zero : unit -> Content<'T>
+//    member Using : 'U * ('U -> Content<'T>) -> Content<'T> when 'T :> IDisposable
+
+[<AutoOpen>]
+module ContentBuilder =
+    val content : ContentBuilder
 
 [<System.Runtime.CompilerServices.Extension; Sealed>]
 type ContextExtensions =

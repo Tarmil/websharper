@@ -187,7 +187,7 @@ module SampleSite =
         }
 
     let Tpl (t: Async<Template>) =
-        async {
+        content {
             let! t = t
             return! Content.Page(
                 Title = t.Title,
@@ -320,7 +320,7 @@ module SampleSite =
                 | Action.Login ->
                     Pages.LoginPage ctx
                 | Action.DoLogin (user, pass) ->
-                    async {
+                    content {
                         if pass = "password" then
                             do! ctx.UserSession.LoginUser user
                             return! Content.RedirectTemporary Action.Home
@@ -330,7 +330,7 @@ module SampleSite =
                     }
                 | Action.Logout ->
                     // Logout user and redirect to home
-                    async {
+                    content {
                         do! ctx.UserSession.Logout ()
                         return! Content.RedirectTemporary Action.Home
                     }
