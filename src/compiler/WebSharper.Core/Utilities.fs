@@ -53,7 +53,11 @@ type Hashed<'T when 'T : equality and 'T : comparison> =
             match other with
             | :? Hashed<'T> as o ->
                 compare this.Value o.Value
-            | _ -> failwith "invalid comparison"        
+            | _ -> failwith "invalid comparison"
+
+    interface System.IComparable<Hashed<'T>> with
+        member this.CompareTo (other: Hashed<'T>) =
+            compare this.Value other.Value
 
     static member Get (h: Hashed<'T>) = h.Value
 

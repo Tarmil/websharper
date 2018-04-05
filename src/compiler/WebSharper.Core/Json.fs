@@ -1816,20 +1816,21 @@ module TypedProviderInternals =
         and pko xs =
             Object (xs |> List.map (fun (a, b) -> (a, pk b)))
         let data = pk encoded
-        let rec encA acc x =
-            match x with
-            | [] -> failwith "types array must not be empty"
-            | [x] -> Array (String x :: acc)
-            | y :: x -> encA (String y :: acc) x
-        let types = List.ofSeq (dict.Keys |> Seq.map (fun a -> a.Value |> encA []))
-        match types, data with
-        | _::_, _
-        | _, Object (((TYPES | VALUE), _) :: _) ->
-            Object [
-                TYPES, Array types
-                DATA, data
-            ]
-        | [], data -> data
+        let rec encA (a: AST.Address) =
+            match a.Module with
+            | AST.NoModule ->
+                Array (Null :: (a.Address.Value |> List.rev |> List.map String))
+            | AST.WebSharperModule m ->
+                Array (String m :: (a.Address.Value |> List.rev |> List.map String))
+            | AST.CurrentModule
+            | AST.ImportedModule _ ->
+                failwith "Invalid type address"
+        let types =
+            Array (List.ofSeq (dict.Keys |> Seq.map encA))
+        Object [
+            TYPES, types
+            DATA, data
+        ]
 
     let epoch = System.DateTime(1970, 1, 1, 0, 0, 0, System.DateTimeKind.Utc)
 

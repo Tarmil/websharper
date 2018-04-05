@@ -461,7 +461,7 @@ module Macro =
                             else
                                 enc >>= fun e ->
                                 let v = Lambda([], Call (None, NonGeneric gtd, NonGeneric gv, []))
-                                let vn = Value (String va.Value.Head)
+                                let vn = Value (String va.Name)
                                 let b = Lambda ([], Conditional(v, v, ItemSet(Global [top], vn, Application(e, [], NonPure, Some 0))))
                                 comp.AddGeneratedCode(gm, b)
                                 Lambda([], Call(None, NonGeneric gtd, NonGeneric gm, [])) |> ok

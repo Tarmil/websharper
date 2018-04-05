@@ -36,15 +36,15 @@ let packageAssembly (refMeta: M.Info) (current: M.Info) isBundle =
     let g = Id.New "Global"
     let glob = Var g
     declarations.Add <| VarDeclaration (g, Var (Id.Global()))
-    addresses.Add(Address [], glob)
-    addresses.Add(Address [ "window" ], glob)
+    addresses.Add(Address.Global [], glob)
+    addresses.Add(Address.Global [ "window" ], glob)
     let safeObject expr = Binary(expr, BinaryOperator.``||``, Object []) 
     
     let rec getAddress (address: Address) =
         match addresses.TryGetValue address with
         | true, v -> v
         | _ ->
-            match address.Value with
+            match address.Address.Value with
             | [] -> glob
             | [ name ] ->
                 let var = Id.New (if name.StartsWith "StartupCode$" then "SC$1" else name)
@@ -54,7 +54,7 @@ let packageAssembly (refMeta: M.Info) (current: M.Info) isBundle =
                 addresses.Add(address, res)
                 res
             | name :: r ->
-                let parent = getAddress (Hashed r)
+                let parent = getAddress { address with Address = Hashed r }
                 let f = Value (String name)
                 let var = Id.New name
                 declarations.Add <| VarDeclaration (var, ItemSet(parent, f, ItemGet(parent, f, Pure) |> safeObject))                
@@ -63,19 +63,19 @@ let packageAssembly (refMeta: M.Info) (current: M.Info) isBundle =
                 res
 
     let getFieldAddress (address: Address) =
-        match address.Value with
+        match address.Address.Value with
         | name :: r ->
-            getAddress (Hashed r), Value (String name)
+            getAddress { address with Address = Hashed r }, Value (String name)
         | _ -> failwith "packageAssembly: empty address"
     
     let rec getOrImportAddress (full: bool) (address: Address) =
         match addresses.TryGetValue address with
         | true, v -> v
         | _ ->
-            match address.Value with
+            match address.Address.Value with
             | [] -> glob
             | h :: t ->
-                let parent = getOrImportAddress false (Address t)
+                let parent = getOrImportAddress false { address with Address = Hashed t }
                 let import = ItemGet(parent, Value (String h), Pure)
                 if full then
                     import
@@ -134,7 +134,7 @@ let packageAssembly (refMeta: M.Info) (current: M.Info) isBundle =
         | _ -> ()
 
         match c.StaticConstructor with
-        | Some(_, GlobalAccess a) when a.Value = [ "ignore" ] -> ()
+        | Some(_, GlobalAccess (Address.Global a)) when a.Value = [ "ignore" ] -> ()
         | Some (ccaddr, body) -> 
             packageCctor ccaddr body name
         | _ -> ()

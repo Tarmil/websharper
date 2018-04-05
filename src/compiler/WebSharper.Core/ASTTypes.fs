@@ -643,7 +643,96 @@ type Member =
     | Constructor of Constructor
     | StaticConstructor
 
-type Address = Hashed<list<string>>
+type PlainAddress = Hashed<list<string>>
+
+type Module =
+    | NoModule
+    | WebSharperModule of string
+    | CurrentModule
+    | ImportedModule of Id
+
+    member this.Name =
+        match this with
+        | WebSharperModule n -> n
+        | ImportedModule n -> n.Name.Value
+        | _ -> failwith "Cannot get name of module"
+
+module Module =
+
+    let Runtime = WebSharperModule "WebSharper.Runtime"
+
+    let (|Runtime|_|) = function
+        | WebSharperModule "WebSharper.Runtime" -> Some ()
+        | _ -> None
+
+type Address =
+    {
+        Module : Module
+        Address : PlainAddress
+    }
+
+    member this.JSAddress =
+        match this.Module with
+        | NoModule -> Some this.Address
+        | _ -> None
+
+    member this.MapName f =
+        match this.Address.Value with
+        | n :: r ->
+            { this with Address = Hashed (f n :: r) }
+        | _ ->
+            failwith "MapName on empty address"
+
+    member this.Sub n =
+        { this with Address = Hashed (n :: this.Address.Value) }
+
+    member this.Parent =
+        match this.Address.Value with
+        | _ :: r ->
+            { this with Address = Hashed r }
+        | _ -> failwith "Parent on empty address"
+
+    member this.Name =
+        match this.Address.Value with
+        | n :: _ -> n
+        | _ -> failwith "Parent on empty address"
+
+    member this.IsParentOf that =
+        this.Module = that.Module &&
+        match this.Address.Value, that.Address.Value with
+        | r1, _ :: r2 -> r1 = r2
+        | _ -> false
+
+module Address =
+
+    let Global addr =
+        { Module = NoModule; Address = Hashed addr }
+
+    let Global' addr =
+        { Module = NoModule; Address = addr }
+
+    let (|Global|_|) = function
+        | { Module = NoModule; Address = a } -> Some a
+        | _ -> None
+
+    let Runtime name =
+        { Module = Module.Runtime; Address = Hashed [name] }
+
+    let (|Runtime|_|) = function
+        | { Module = WebSharperModule "WebSharper.Runtime"; Address = a } -> Some a
+        | _ -> None
+
+    let Local addr =
+        { Module = CurrentModule; Address = Hashed addr }
+
+    let Local' addr =
+        { Module = CurrentModule; Address = addr }
+
+    let Make m addr =
+        { Module = m; Address = Hashed addr }
+
+    let Make' m addr =
+        { Module = m; Address = addr }
 
 module private Instances =
     let GlobalId =

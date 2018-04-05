@@ -36,13 +36,13 @@ module IS = IgnoreSourcePos
 let GetMutableExternals (meta: M.Info) =
     let res = HashSet()
 
-    let registerInstanceAddresses (cls: M.ClassInfo) baseAddr =
+    let registerInstanceAddresses (cls: M.ClassInfo) (baseAddr: PlainAddress) =
         for fi, readOnly, _ in cls.Fields.Values do
             if not readOnly then
                 match fi with
                 | M.InstanceField n
                 | M.OptionalField n ->
-                    res.Add (Address (n :: baseAddr)) |> ignore
+                    res.Add (PlainAddress (n :: baseAddr.Value)) |> ignore
                 | _ -> () 
 
         let addMember (m: Method) e =
@@ -50,7 +50,7 @@ let GetMutableExternals (meta: M.Info) =
                 match e with
                 | IS.Function(_, IS.ExprStatement(IS.ItemSet(IS.This, IS.Value (String n), _)))
                 | IS.Unary(UnaryOperator.``void``, IS.ItemSet(Hole(0), IS.Value (String n), Hole(1))) ->
-                    res.Add (Address (n :: baseAddr)) |> ignore
+                    res.Add (PlainAddress (n :: baseAddr.Value)) |> ignore
                 | _ -> ()
 
         for KeyValue(m, (_, _, e)) in cls.Methods do
@@ -64,7 +64,7 @@ let GetMutableExternals (meta: M.Info) =
         | ConcreteType ct ->
             match meta.Classes.TryGetValue ct.Entity with
             | true, fcls ->
-                registerInstanceAddresses fcls a.Value
+                a.JSAddress |> Option.iter (registerInstanceAddresses fcls)
             | _ -> ()
         | _ -> ()
     
@@ -73,7 +73,7 @@ let GetMutableExternals (meta: M.Info) =
             match fi with
             | M.StaticField a ->
                 if not readOnly then
-                    res.Add a |> ignore
+                    a.JSAddress |> Option.iter (res.Add >> ignore)
                 tryRegisterInstanceAddresses ftyp a
             | _ -> () 
 
@@ -82,7 +82,7 @@ let GetMutableExternals (meta: M.Info) =
                 match e with
                 | IS.Function(_, IS.ExprStatement(IS.ItemSet(IS.GlobalAccess a, IS.Value (String n), _)))
                 | IS.Unary(UnaryOperator.``void``, IS.ItemSet(IS.GlobalAccess a, IS.Value (String n), Hole(0))) ->
-                    res.Add (Address (n :: a.Value)) |> ignore
+                    a.JSAddress |> Option.iter (fun a -> res.Add (PlainAddress (n :: a.Value)) |> ignore)
                 | _ -> ()
             elif m.Value.MethodName.StartsWith "get_" then
                 match e with
@@ -106,7 +106,7 @@ type Environment =
         Labels : Map<string, Id>
         This : option<Id>
         Purity : Purity
-        MutableExternals : HashSet<Address>
+        MutableExternals : HashSet<PlainAddress>
     }
 
     static member New(thisArg, isDirect, isPure, args, ext) =
@@ -223,8 +223,8 @@ let checkNotMutating (env: Environment) a f =
 let setValue (env: Environment) expr value =
     match expr with
     | GlobalAccess a ->
-        match a.Value with
-        | i :: m -> ItemSet(GlobalAccess (Address m), Value (String i), value)
+        match a.Address.Value with
+        | i :: m -> ItemSet(GlobalAccess { a with Address = PlainAddress m }, Value (String i), value)
         | _ -> failwith "cannot set the window object"
     | ItemGet (d, e, _) -> ItemSet(d, e, value)
     | Var d -> checkNotMutating env (Var d) (fun _ -> VarSet(d, value))
@@ -321,11 +321,11 @@ let rec transformExpression (env: Environment) (expr: S.Expression) =
             else
                 match trA, trC with
                 | GlobalAccess a, Value (String b) when not (I.IsObjectMember b || jsFunctionMembers.Contains b)  ->
-                    let ga = Address (b :: a.Value)
+                    let ga = PlainAddress (b :: a.Address.Value)
                     if env.MutableExternals.Contains ga then 
                         ItemGet(trA, trC, env.Purity)
                     else
-                        GlobalAccess (Address (b :: a.Value))
+                        GlobalAccess { a with Address = PlainAddress (b :: a.Address.Value) }
                 | _ ->
                     ItemGet(trA, trC, env.Purity) 
         | SB.``/``      -> Binary(trE a, BinaryOperator.``/``, trE c)

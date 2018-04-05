@@ -21,6 +21,8 @@
 [<AutoOpen>]
 module WebSharper.Core.AST.ASTHelpers
 
+open WebSharper.Core
+
 /// Constructs a Concrete<'T> instance
 let Generic e g =
     {
@@ -156,7 +158,7 @@ let CombineExpressions exprs =
     | res -> Sequential res
 
 /// Creates a GlobalAccess case from an access list in normal order
-let Global a = GlobalAccess (Address (List.rev a))
+let Global a = GlobalAccess (Address.Global (List.rev a))
 
 /// Make a proxy for a by-address value, having two functions for get/set.
 let MakeRef getVal setVal =

@@ -57,6 +57,7 @@ type Compilation(meta: Info, ?hasGraph) =
     let errors = ResizeArray()
     let warnings = ResizeArray() 
 
+    let thisModule = Module.WebSharperModule "TODO"
     let mutable entryPoint = None
 
     let macros = System.Collections.Generic.Dictionary<TypeDefinition, Macro option>()
@@ -189,12 +190,12 @@ type Compilation(meta: Info, ?hasGraph) =
                     Generics = 0       
                 }
             generatedMethodAddresses.Add(meth, resolved)
-            td, meth, resolved
+            td, meth, Address.Make' thisModule resolved
 
         member this.AddGeneratedCode(meth: Method, body: Expression) =
             let td = this.GetGeneratedClass()
             let addr = generatedMethodAddresses.[meth]
-            compilingMethods.Add((td, meth),(NotCompiled (Static addr, true, Optimizations.None), body))
+            compilingMethods.Add((td, meth),(NotCompiled (Static (Address.Local' addr), true, Optimizations.None), body))
 
         member this.AddGeneratedInline(meth: Method, body: Expression) =
             let td = this.GetGeneratedClass()
@@ -640,7 +641,7 @@ type Compilation(meta: Info, ?hasGraph) =
         let typ = this.FindProxied typ
         let cls = classes.[typ]
         match cls.StaticConstructor with
-        | Some(_, GlobalAccess a) when a.Value = [ "ignore" ] -> None
+        | Some(_, GlobalAccess (Address.Global a)) when a.Value = [ "ignore" ] -> None
         | Some (cctor, _) -> Some cctor
         | None -> None
 
@@ -769,8 +770,8 @@ type Compilation(meta: Info, ?hasGraph) =
         let r = getAllAddresses meta
         resolver <- Some r
 
-        let someEmptyAddress = Some (Address [])
-        let unresolvedCctor = Some (Address [], Undefined)
+        let someEmptyAddress = Some (Address.Global [])
+        let unresolvedCctor = Some (Address.Global [], Undefined)
 
         let resNode (t, p) =
             ResourceNode (t, p |> Option.map ParameterObject.OfObj)
@@ -960,10 +961,11 @@ type Compilation(meta: Info, ?hasGraph) =
 
         let setClassAddress typ clAddr =
             let res = classes.[typ]
+            let clAddr = Address.Local' clAddr
             if Option.isSome res.Address then
                 classes.[typ] <- { res with Address = Some clAddr }
             else
-                extraClassAddresses.[typ] <- clAddr.Value
+                extraClassAddresses.[typ] <- clAddr
 
         // split to resolve steps
         let stronglyNamedClasses = ResizeArray()
@@ -1115,7 +1117,7 @@ type Compilation(meta: Info, ?hasGraph) =
                 |> List.rev
             if not (r.ExactClassAddress(addr, classes.[typ].HasWSPrototype)) then
                 this.AddError(None, NameConflict ("Class name conflict", sn))
-            setClassAddress typ (Address addr)
+            setClassAddress typ (PlainAddress addr)
 
         let nameStaticMember typ addr m = 
             let res = classes.[typ]
@@ -1174,12 +1176,14 @@ type Compilation(meta: Info, ?hasGraph) =
 
         let getClassAddress typ =
             match classes.[typ].Address with
-            | Some a -> a.Value
+            | Some a -> a
             | _ -> 
             match extraClassAddresses.TryFind typ with
             | Some a -> a
             | _ ->
-                let a = r.ClassAddress(typ.Value.FullName.Split('.') |> List.ofArray |> List.rev, false).Value    
+                let a =
+                    r.ClassAddress(typ.Value.FullName.Split('.') |> List.ofArray |> List.rev, false)
+                    |> Address.Local'
                 extraClassAddresses.Add(typ, a)
                 a
                                      
@@ -1190,11 +1194,11 @@ type Compilation(meta: Info, ?hasGraph) =
                     printerrf "Invalid Name attribute argument on type '%s'" typ.Value.FullName
                     ["$$ERROR$$"]
                 | [| n |] -> 
-                    n :: getClassAddress typ
+                    n :: (getClassAddress typ).Address.Value
                 | a -> List.ofArray (Array.rev a)
             if not (r.ExactStaticAddress addr) then
                 this.AddError(None, NameConflict ("Static member name conflict", sn)) 
-            nameStaticMember typ (Address addr) m
+            nameStaticMember typ (Address.Local addr) m
 
         for KeyValue((td, m), args) in compilingQuotedArgMethods do
             let cls =
@@ -1203,7 +1207,7 @@ type Compilation(meta: Info, ?hasGraph) =
                 | None ->
                     let cls =
                         {
-                            Address = Some (r.ClassAddress(defaultAddressOf td, false))
+                            Address = Some (Address.Local' <| r.ClassAddress(defaultAddressOf td, false))
                             BaseClass = None
                             Constructors = Dictionary()
                             Fields = Dictionary()
@@ -1226,10 +1230,10 @@ type Compilation(meta: Info, ?hasGraph) =
         for KeyValue(typ, ms) in remainingNamedStaticMembers do
             let clAddr = getClassAddress typ
             for m, n in ms do
-                let addr = n :: clAddr
+                let addr = n :: clAddr.Address.Value
                 if not (r.ExactStaticAddress addr) then
                     this.AddError(None, NameConflict ("Static member name conflict", addr |> String.concat "."))
-                nameStaticMember typ (Address addr) m
+                nameStaticMember typ (Address.Local addr) m
            
         // TODO: check nothing is hiding (exclude overrides and implementations)
         for KeyValue(typ, ms) in namedInstanceMembers do
@@ -1244,7 +1248,7 @@ type Compilation(meta: Info, ?hasGraph) =
             f.Split('@').[0]
 
         for KeyValue(typ, ms) in remainingStaticMembers do
-            let clAddr = getClassAddress typ
+            let clAddr = (getClassAddress typ).Address.Value
             for m in ms do
                 let uaddr = 
                     match m with
@@ -1260,7 +1264,7 @@ type Compilation(meta: Info, ?hasGraph) =
                         else n :: clAddr
                     | M.StaticConstructor _ -> "$cctor" :: clAddr
                 let addr = r.StaticAddress uaddr
-                nameStaticMember typ addr m
+                nameStaticMember typ (Address.Local' addr) m
 
         let resolved = HashSet()
         

@@ -319,11 +319,12 @@ type InlineControl<'T when 'T :> IControlBody>(elt: Expr<'T>) =
     let elt = elt
 
     let mutable args = [||]
+    let mutable ``module`` = ""
     let mutable funcName = [||]
 
     [<JavaScript>]
     override this.Body =
-        let f = Array.fold (?) JS.Window funcName
+        let f = Array.fold (?) (JS.Inline("require($0)", ``module``)) funcName
         As<Function>(f).ApplyUnsafe(null, args) :?> _
 
     interface IRequiresResources with
@@ -350,7 +351,8 @@ type InlineControl<'T when 'T :> IControlBody>(elt: Expr<'T>) =
             | None -> fail()
             | Some cls ->
                 match cls.Methods.TryFind meth with
-                | Some (M.Static a, _, _) ->
+                | Some (M.Static { Module = m; Address = a }, _, _) ->
+                    ``module`` <- m.Name
                     funcName <- Array.ofList (List.rev a.Value)
                 | Some _ ->
                     failwithf "Error in InlineControl at %s: Method %s.%s must be static and not inlined"
@@ -429,6 +431,7 @@ type CSharpInlineControl(elt: System.Linq.Expressions.Expression<Func<IControlBo
         args, (declType, meth, reqs)
 
     let args = fst bodyAndReqs
+    let mutable ``module`` = ""
     let mutable funcName = [||]
 
     [<JavaScript>]
@@ -447,7 +450,8 @@ type CSharpInlineControl(elt: System.Linq.Expressions.Expression<Func<IControlBo
                 | None -> fail()
                 | Some cls ->
                     match cls.Methods.TryFind meth with
-                    | Some (M.Static a, _, _) ->
+                    | Some (M.Static { Module = m; Address = a }, _, _) ->
+                        ``module`` <- m.Name
                         funcName <- Array.ofList (List.rev a.Value)
                     | Some _ -> 
                         failwithf "Error in InlineControl: Method %s.%s must be static and not inlined"

@@ -144,6 +144,8 @@ let trAsm (prototypes: IDictionary<string, string>) (assembly : Mono.Cecil.Assem
     let emptyMutableExternals = HashSet()
     
     let allTypes = assembly.MainModule.Types |> Seq.collect withNested |> Array.ofSeq
+
+    let thisModule = Module.WebSharperModule assembly.FullName
         
     let asmName = assembly.FullName.Split(',').[0]
 
@@ -271,7 +273,9 @@ let trAsm (prototypes: IDictionary<string, string>) (assembly : Mono.Cecil.Assem
                            
         classes.Add(def, 
             {
-                Address = prototypes.TryFind(def.Value.FullName) |> Option.map (fun s -> s.Split('.') |> List.ofArray |> List.rev |> Address)
+                Address = prototypes.TryFind(def.Value.FullName) |> Option.map (fun s ->
+                            s.Split('.') |> List.ofArray |> List.rev
+                            |> Address.Make thisModule)
                 BaseClass = baseDef
                 Constructors = constructors
                 Fields = Map.empty 

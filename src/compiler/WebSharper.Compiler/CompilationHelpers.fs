@@ -575,9 +575,8 @@ let makeExprInline (vars: Id list) expr =
         ) (vars |> List.mapi (fun i a -> a, Hole i)) expr
 
 module JSRuntime =
-    let private runtime = ["Runtime"; "IntelliFactory"]
-    let private runtimeFunc f p args = Application(GlobalAccess (Address (f :: runtime)), args, p, Some (List.length args))
-    let private runtimeFuncI f p i args = Application(GlobalAccess (Address (f :: runtime)), args, p, Some i)
+    let private runtimeFunc f p args = Application(GlobalAccess (Address.Runtime f), args, p, Some (List.length args))
+    let private runtimeFuncI f p i args = Application(GlobalAccess (Address.Runtime f), args, p, Some i)
     let Class members basePrototype statics = runtimeFunc "Class" Pure [members; basePrototype; statics]
     let Ctor ctor typeFunction = runtimeFunc "Ctor" Pure [ctor; typeFunction]
     let Clone obj = runtimeFunc "Clone" Pure [obj]
@@ -724,11 +723,11 @@ module Resolve =
         | Member
     
     type Resolver() =
-        let statics = Dictionary<Address, ResolveNode>()
+        let statics = Dictionary<PlainAddress, ResolveNode>()
         let prototypes = Dictionary<TypeDefinition, HashSet<string>>()
 
         let rec getSubAddress (root: list<string>) (name: string) node =
-            let tryAddr = Address (name :: root)
+            let tryAddr = PlainAddress (name :: root)
             match statics.TryFind tryAddr, node with
             | Some _, Member
             | Some Member, _ 
@@ -739,7 +738,7 @@ module Resolve =
                 tryAddr
 
         let getExactSubAddress (root: list<string>) (name: string) node =
-            let tryAddr = Address (name :: root)
+            let tryAddr = PlainAddress (name :: root)
             match statics.TryFind tryAddr, node with
             | Some (Class | Module), Module -> true
             | Some Module, Class
@@ -799,8 +798,9 @@ let getAllAddresses (meta: Info) =
         let rec addMember (m: CompiledMember) =
             match m with
             | Instance n -> pr |> Option.iter (fun p -> p.Add n |> ignore)
-            | Static a 
-            | Constructor a -> r.ExactStaticAddress a.Value |> ignore
+            | Static { Module = Module.CurrentModule; Address = a }
+            | Constructor { Module = Module.CurrentModule; Address = a } ->
+                r.ExactStaticAddress a.Value |> ignore
             | Macro (_, _, Some m) -> addMember m
             | _ -> ()
         for m, _, _ in cls.Constructors.Values do addMember m
@@ -808,12 +808,15 @@ let getAllAddresses (meta: Info) =
             match f with
             | InstanceField n 
             | OptionalField n -> pr |> Option.iter (fun p -> p.Add n |> ignore)
-            | StaticField a -> r.ExactStaticAddress a.Value |> ignore
+            | StaticField { Module = Module.CurrentModule; Address = a } ->
+                r.ExactStaticAddress a.Value |> ignore
+            | StaticField _
             | IndexedField _ -> ()
         for m, _ in cls.Implementations.Values do addMember m
         for m, _, _ in cls.Methods.Values do addMember m
         match cls.StaticConstructor with
-        | Some (a, _) -> r.ExactStaticAddress a.Value |> ignore  
+        | Some ({ Module = Module.CurrentModule; Address = a }, _) ->
+            r.ExactStaticAddress a.Value |> ignore  
         | _ -> ()
     // inheritance 
     let inheriting = HashSet()

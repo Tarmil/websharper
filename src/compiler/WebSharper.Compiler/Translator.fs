@@ -553,7 +553,7 @@ type DotNetToJavaScript private (comp: Compilation, ?inProgress) =
             // for C# static auto-properties
             selfAddress <- 
                 comp.TryLookupClassInfo(typ) |> Option.bind (fun cls ->
-                    cls.StaticConstructor |> Option.map (fun (a, _) -> Address (List.tail a.Value))    
+                    cls.StaticConstructor |> Option.map (fun (a, _) -> a.Parent)
                 )
             currentIsInline <- isInline info
             match info with
@@ -648,7 +648,7 @@ type DotNetToJavaScript private (comp: Compilation, ?inProgress) =
             selfAddress <- 
                 let cls = comp.TryLookupClassInfo(typ).Value
                 let addr = fst cls.StaticConstructor.Value 
-                Some (Address (List.tail addr.Value))
+                Some addr.Parent
             let res = this.TransformExpression expr |> breakExpr |> this.CheckResult
             comp.AddCompiledStaticConstructor(typ, addr, res)
         with e ->
@@ -1444,7 +1444,7 @@ type DotNetToJavaScript private (comp: Compilation, ?inProgress) =
     override this.TransformSelf () = 
         match selfAddress with
         | Some self ->
-            match self.Value with
+            match self.Address.Value with
             | selfName :: _ -> GlobalAccess self
             | _ -> this.Error ("Self address empty")
         | _ -> this.Error ("Self address missing")
@@ -1501,10 +1501,11 @@ type DotNetToJavaScript private (comp: Compilation, ?inProgress) =
             | M.InstanceField fname ->
                 ItemSet(this.TransformExpression expr.Value, Value (String fname), this.TransformExpression value) 
             | M.StaticField faddr ->
-                let f, a = List.head faddr.Value, List.tail faddr.Value
+                let f = faddr.Name
+                let a = faddr.Parent
                 CombineExpressions [
                     this.TransformCctor typ.Entity
-                    ItemSet(GlobalAccess (Hashed a), Value (String f), this.TransformExpression value)
+                    ItemSet(GlobalAccess a, Value (String f), this.TransformExpression value)
                 ]
             | M.OptionalField fname -> 
                 JSRuntime.SetOptional (this.TransformExpression expr.Value) (Value (String fname)) (this.TransformExpression value)
@@ -1562,10 +1563,10 @@ type DotNetToJavaScript private (comp: Compilation, ?inProgress) =
                 TypeOf "string"
             | "WebSharper.JavaScript.Error"
             | "System.Exception" ->
-                InstanceOf (Address ["Error"])
+                InstanceOf (Address.Global ["Error"])
             | "WebSharper.JavaScript.Array"
             | "System.Array" ->
-                InstanceOf (Address ["Array"])
+                InstanceOf (Address.Global ["Array"])
             | "WebSharper.JavaScript.Function" ->
                 TypeOf "function"
             | _ ->

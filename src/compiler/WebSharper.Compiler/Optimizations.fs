@@ -42,15 +42,15 @@ open IgnoreSourcePos
 
 let (|Runtime|_|) e = 
     match e with 
-    | GlobalAccess a ->
+    | GlobalAccess { Module = Module.Runtime; Address = a } ->
         match a.Value with
-        | [ r; "Runtime"; "IntelliFactory" ] -> Some r
+        | [ r ] -> Some r
         | _ -> None
     | _ -> None
 
 let (|Global|_|) e = 
     match e with 
-    | GlobalAccess a ->
+    | GlobalAccess { Module = NoModule; Address = a } ->
         match a.Value with
         | [ r ] -> Some r
         | _ -> None
@@ -80,7 +80,7 @@ let func vars body isReturn =
 let thisFunc this vars body isReturn =
     func vars (FixThisScope().Fix(SubstituteVar(this, This).TransformExpression(body))) isReturn
 
-let globalArray = Address [ "Array" ]
+let globalArray = Address.Global [ "Array" ]
 
 let cleanRuntime force expr =
 //    let tr = Transform clean
@@ -111,11 +111,11 @@ let cleanRuntime force expr =
         | "Apply", [GlobalAccess mf; Value Null; AppItem(NewArray arr, "concat", [ NewArray rest ]) ] ->
             Application (GlobalAccess mf, arr @ rest, NonPure, None)
 
-        | "Apply", [GlobalAccess mf; GlobalAccess m ] when mf.Value.Tail = m.Value ->
+        | "Apply", [GlobalAccess mf; GlobalAccess m ] when m.IsParentOf mf ->
             Application (GlobalAccess mf, [], NonPure, None)
-        | "Apply", [GlobalAccess mf; GlobalAccess m; NewArray arr ] when mf.Value.Tail = m.Value ->
+        | "Apply", [GlobalAccess mf; GlobalAccess m; NewArray arr ] when m.IsParentOf mf ->
             Application (GlobalAccess mf, arr, NonPure, None)
-        | "Apply", [GlobalAccess mf; GlobalAccess m; AppItem(NewArray arr, "concat", [ NewArray rest ]) ] when mf.Value = m.Value ->
+        | "Apply", [GlobalAccess mf; GlobalAccess m; AppItem(NewArray arr, "concat", [ NewArray rest ]) ] when mf = m ->
             Application (GlobalAccess mf, arr @ rest, NonPure, None)
         
         | "Apply", [GetPrototypeConstuctor m1; GlobalAccess m2 ] when m1 = m2 ->

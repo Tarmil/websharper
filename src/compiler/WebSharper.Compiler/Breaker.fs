@@ -218,7 +218,7 @@ let (|ObjWithPropSetters|_|) expr =
 
 let bind key value body = Let (key, value, body)
 
-let globalId = Address [ "id" ]
+let globalId = Address.Global [ "id" ]
 
 let rec removeLets expr =
     let func vars body isReturn =
