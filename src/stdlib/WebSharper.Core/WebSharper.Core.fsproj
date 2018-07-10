@@ -1,0 +1,104 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\..\msbuild\netfx.props" />
+  <PropertyGroup>
+    <TargetFrameworks>net461;netstandard2.0</TargetFrameworks>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../compiler/WebSharper.Core/netstandardtypes.txt">
+      <Link>netstandardtypes.txt</Link>
+    </EmbeddedResource>
+    <Compile Include="../../compiler/WebSharper.Core/FastInvoke.fsi">
+      <Link>FastInvoke.fsi</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/FastInvoke.fs">
+      <Link>FastInvoke.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/PathConventions.fsi">
+      <Link>PathConventions.fsi</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/PathConventions.fs">
+      <Link>PathConventions.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/ContentTypes.fs">
+      <Link>ContentTypes.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Utilities.fs">
+      <Link>Utilities.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/AssemblyConventions.fs">
+      <Link>AssemblyConventions.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Binary.fsi">
+      <Link>Binary.fsi</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Binary.fs">
+      <Link>Binary.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/ASTTypes.fs">
+      <Link>ASTTypes.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/AST.fs">
+      <Link>AST.fs</Link>
+    </Compile>
+    <None Include="../../compiler/WebSharper.Core/genAST.fsx">
+      <Link>genAST.fsx</Link>
+    </None>
+    <Compile Include="../../compiler/WebSharper.Core/ASTHelpers.fs">
+      <Link>ASTHelpers.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Attributes.fs">
+      <Link>Attributes.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Metadata.fs">
+      <Link>Metadata.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Resources.fsi">
+      <Link>Resources.fsi</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Resources.fs">
+      <Link>Resources.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Macro.fs">
+      <Link>Macro.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Macros.fsi">
+      <Link>Macros.fsi</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Macros.fs">
+      <Link>Macros.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Graph.fs">
+      <Link>Graph.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Json.fsi">
+      <Link>Json.fsi</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Json.fs">
+      <Link>Json.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Remoting.fsi">
+      <Link>Remoting.fsi</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Remoting.fs">
+      <Link>Remoting.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core/Interop.fs">
+      <Link>Interop.fs</Link>
+    </Compile>
+    <None Include="../../compiler/WebSharper.Core/genInterop.fsx">
+      <Link>genInterop.fsx</Link>
+    </None>
+    <None Include="../../compiler/WebSharper.Core/paket.references">
+      <Link>paket.references</Link>
+    </None>
+  </ItemGroup>
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net4'))">
+    <Reference Include="System.Web" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../WebSharper.Core.JavaScript/WebSharper.Core.JavaScript.fsproj" />
+  </ItemGroup>
+  <Import Project="..\..\..\msbuild\FSharp.targets" />
+  <Import Project="..\..\..\.paket\Paket.Restore.targets" />
+</Project>

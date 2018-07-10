@@ -14,8 +14,8 @@
     <None Include="paket.references" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\compiler\WebSharper.Core.JavaScript\WebSharper.Core.JavaScript.fsproj" />
-    <ProjectReference Include="..\..\compiler\WebSharper.Core\WebSharper.Core.fsproj" />
+    <ProjectReference Include="..\WebSharper.Core.JavaScript\WebSharper.Core.JavaScript.fsproj" />
+    <ProjectReference Include="..\WebSharper.Core\WebSharper.Core.fsproj" />
     <ProjectReference Include="..\..\sitelets\WebSharper.Web\WebSharper.Web.fsproj" />
     <ProjectReference Include="..\WebSharper.Collections\WebSharper.Collections.fsproj" />
     <ProjectReference Include="..\WebSharper.JavaScript\WebSharper.JavaScript.fsproj" />

@@ -30,10 +30,11 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
     <Root>$(MSBuildThisFileDirectory)..\</Root>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <OutputPath Condition=" '$(OutputPath)' == '' And '$(CommonTool)' == 'True' ">$(Root)build\$(Configuration)\Compiler\</OutputPath>
     <OutputPath Condition=" '$(OutputPath)' == '' And '$(CSharpTool)' == 'True' ">$(Root)build\$(Configuration)\CSharp\</OutputPath>
     <OutputPath Condition=" '$(OutputPath)' == '' And '$(FSharpTool)' == 'True' ">$(Root)build\$(Configuration)\FSharp\</OutputPath>
     <OutputPath Condition=" '$(OutputPath)' == '' And '$(Tests)' == 'True' ">$(Root)\build\$(Configuration)\Tests\</OutputPath>
-    <OutputPath Condition=" '$(OutputPath)' == '' ">$(Root)build\$(Configuration)\</OutputPath>
+    <OutputPath Condition=" '$(OutputPath)' == '' ">$(Root)build\$(Configuration)\Libs\</OutputPath>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(FSharp40)' == 'True' ">
     <DefineConstants>$(DefineConstants);FSHARP40</DefineConstants>

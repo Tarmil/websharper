@@ -1,4 +1,4 @@
-FSharp.Core
 System.ValueTuple
 group compilers
   Fsharp.Compiler.Tools
+  FSharp.Core

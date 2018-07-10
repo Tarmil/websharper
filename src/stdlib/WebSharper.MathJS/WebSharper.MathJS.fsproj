@@ -11,8 +11,8 @@
     <None Include="paket.references" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\compiler\WebSharper.Core\WebSharper.Core.fsproj" />
-    <ProjectReference Include="..\..\compiler\WebSharper.InterfaceGenerator\WebSharper.InterfaceGenerator.fsproj" />
+    <ProjectReference Include="..\WebSharper.Core\WebSharper.Core.fsproj" />
+    <ProjectReference Include="..\WebSharper.InterfaceGenerator\WebSharper.InterfaceGenerator.fsproj" />
     <ProjectReference Include="..\WebSharper.JavaScript\WebSharper.JavaScript.fsproj" />
   </ItemGroup>
   <Import Project="..\..\..\msbuild\WebSharper.FSharp.Internal.targets" />

@@ -58,11 +58,11 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\compiler\WebSharper.Core.JavaScript\WebSharper.Core.JavaScript.fsproj">
+    <ProjectReference Include="..\..\src\stdlib\WebSharper.Core.JavaScript\WebSharper.Core.JavaScript.fsproj">
       <Project>{891cb1bd-128a-4455-8f02-a726b0b2eacf}</Project>
       <Name>WebSharper.Core.JavaScript</Name>
     </ProjectReference>
-    <ProjectReference Include="..\..\src\compiler\WebSharper.Core\WebSharper.Core.fsproj">
+    <ProjectReference Include="..\..\src\stdlib\WebSharper.Core\WebSharper.Core.fsproj">
       <Project>{52741881-8d64-4639-8b5c-19c060958c35}</Project>
       <Name>WebSharper.Core</Name>
     </ProjectReference>

@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\..\msbuild\netfx.props" />
+  <PropertyGroup>
+    <TargetFrameworks>net461;netstandard2.0</TargetFrameworks>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../compiler/WebSharper.InterfaceGenerator/Reflection.fsi">
+      <Link>Reflection.fsi</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.InterfaceGenerator/Reflection.fs">
+      <Link>Reflection.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.InterfaceGenerator/Util.fs">
+      <Link>Util.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.InterfaceGenerator/Type.fs">
+      <Link>Type.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.InterfaceGenerator/CodeModel.fs">
+      <Link>CodeModel.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.InterfaceGenerator/Pervasives.fs">
+      <Link>Pervasives.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.InterfaceGenerator/Pattern.fs">
+      <Link>Pattern.fs</Link>
+    </Compile>
+    <None Include="../../compiler/WebSharper.InterfaceGenerator/paket.references">
+      <Link>paket.references</Link>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\WebSharper.Core\WebSharper.Core.fsproj" />
+  </ItemGroup>
+  <Import Project="..\..\..\msbuild\FSharp.targets" />
+  <Import Project="..\..\..\.paket\Paket.Restore.targets" />
+</Project>

@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\..\msbuild\netfx.props" />
+  <PropertyGroup>
+    <TargetFrameworks>net461;netstandard2.0</TargetFrameworks>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../compiler/WebSharper.Core.JavaScript/Extensions.fs">
+      <Link>Extensions.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core.JavaScript/Preferences.fs">
+      <Link>Preferences.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core.JavaScript/Identifier.fsi">
+      <Link>Identifier.fsi</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core.JavaScript/Identifier.fs">
+      <Link>Identifier.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core.JavaScript/Syntax.fsi">
+      <Link>Syntax.fsi</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core.JavaScript/Syntax.fs">
+      <Link>Syntax.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core.JavaScript/Lexer.fsi">
+      <Link>Lexer.fsi</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core.JavaScript/Lexer.fs">
+      <Link>Lexer.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core.JavaScript/Parser.fsi">
+      <Link>Parser.fsi</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core.JavaScript/Parser.fs">
+      <Link>Parser.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core.JavaScript/Writer.fsi">
+      <Link>Writer.fsi</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core.JavaScript/Writer.fs">
+      <Link>Writer.fs</Link>
+    </Compile>
+    <Compile Include="../../compiler/WebSharper.Core.JavaScript/Annotations.fs">
+      <Link>Annotations.fs</Link>
+    </Compile>
+    <EmbeddedResource Include="../../compiler/WebSharper.Core.JavaScript/Runtime.js">
+      <Link>Runtime.js</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="../../compiler/WebSharper.Core.JavaScript/Runtime.min.js">
+      <Link>Runtime.min.js</Link>
+    </EmbeddedResource>
+    <None Include="../../compiler/WebSharper.Core.JavaScript/paket.references">
+      <Link>paket.references</Link>
+    </None>
+  </ItemGroup>
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net4'))">
+    <Reference Include="System.Web" />
+  </ItemGroup>
+  <Import Project="..\..\..\msbuild\FSharp.targets" />
+  <Import Project="..\..\..\.paket\Paket.Restore.targets" />
+</Project>
