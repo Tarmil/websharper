@@ -268,7 +268,7 @@ let rec transformExpr (env: Environment) (expr: Expression) : J.Expression =
         | MutatingUnaryOperator.delete   -> J.Unary(J.UnaryOperator.delete, trE y)
         | _ -> failwith "invalid MutatingUnaryOperator enum value"
     | _ -> 
-        failwithf "Not in JavaScript form: %A" (RemoveSourcePositions().TransformExpression(expr))
+        failwithf "Not in JavaScript form: %A" (RemoveSourcePositions().TransformExpression'(expr))
         invalidForm (GetUnionCaseName expr)
 
 and private transformStatement (env: Environment) (statement: Statement) : J.Statement =
@@ -415,5 +415,5 @@ and private transformStatement (env: Environment) (statement: Statement) : J.Sta
         withFuncDecls <| fun () ->
             J.ForVarIn(defineId env false a, None, trE b, trS c)
     | _ -> 
-        failwithf "Not in JavaScript form: %A" (RemoveSourcePositions().TransformStatement(statement))
+        failwithf "Not in JavaScript form: %A" (RemoveSourcePositions().TransformStatement'(statement))
         invalidForm (GetUnionCaseName statement)

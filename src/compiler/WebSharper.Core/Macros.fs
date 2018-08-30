@@ -1219,13 +1219,13 @@ type DefaultToUndefined() =
         { new Transformer() with
             override this.TransformCall(thisObj, typ, meth, args) =
                 if Option.isNone thisObj && IsDefaultValue typ.Entity meth.Entity && List.isEmpty args then
-                    Undefined
+                    VSome Undefined
                 else
                     base.TransformCall(thisObj, typ, meth, args)  
         }.TransformExpression
 
     override __.TranslateCall(c) =
-        MacroOk <| tr c.Arguments.[0]
+        MacroOk <| VOption.attempt tr c.Arguments.[0]
 
 [<Sealed>]
 type TypeTest() =

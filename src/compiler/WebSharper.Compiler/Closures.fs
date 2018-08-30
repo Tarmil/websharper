@@ -118,25 +118,25 @@ type ExamineClosures (comp: Compilation, moveNonCapturingFunctionsToTop) =
         this.EnterScope(args, body)
         let res = base.TransformFuncDeclaration(f, args, body)
         if this.ExitScope(f) then
-            movedToTop.Add(res)  
-            Empty  
+            movedToTop.Add(res.Or(FuncDeclaration(f, args, body)))
+            VSome Empty
         else res
 
     override this.TransformFunction(args, body) =
         if outerScope then
             outerScope <- false
             CollectVariables.ScopeVars(body) |> Seq.iter (topScopeVars.Add >> ignore)
-            let trBody = this.TransformStatement body
+            let trBody = this.TransformStatement' body
             outerScope <- true
-            Function(args, CombineStatements (trBody :: List.ofSeq movedToTop))
+            Function(args, CombineStatements (trBody :: List.ofSeq movedToTop)) |> VSome
         else
             this.EnterScope(args, body)
             let trBody = this.TransformStatement body
             if this.ExitScope() then
                 let f = Id.New("f", mut = false)
                 movedToTop.Add(FuncDeclaration(f, args, body))
-                Var f
-            else Function(args, trBody)
+                Var f |> VSome
+            else VOption.map (fun x -> Function(args, x)) trBody
 
     override this.TransformId(i) =
         match scopeChain with
@@ -144,4 +144,4 @@ type ExamineClosures (comp: Compilation, moveNonCapturingFunctionsToTop) =
             if not (s.Vars.Contains i) && not (topScopeVars.Contains i) then
                 s.Captured.Add i |> ignore   
         | _ -> ()
-        i
+        VNone

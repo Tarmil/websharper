@@ -20,6 +20,8 @@
 
 namespace WebSharper.Core.AST
 
+open WebSharper.Core
+
 type Literal =
     | Null
     | Bool    of Value:bool
@@ -246,247 +248,533 @@ and Statement =
 /// Provides virtual methods for transforming each AST case separately.
 type Transformer() =
     /// JavaScript `undefined` value or `void` in .NET
-    abstract TransformUndefined : unit -> Expression
-    override this.TransformUndefined () = Undefined 
+    abstract TransformUndefined : unit -> VOption<Expression>
+    override this.TransformUndefined () =
+        VNone
+    member this.TransformUndefined' () = match this.TransformUndefined () with VSome x -> x | VNone -> Undefined 
     /// The `this` value of current JavaScript function scope
-    abstract TransformThis : unit -> Expression
-    override this.TransformThis () = This 
+    abstract TransformThis : unit -> VOption<Expression>
+    override this.TransformThis () =
+        VNone
+    member this.TransformThis' () = match this.TransformThis () with VSome x -> x | VNone -> This 
     /// The `arguments` value of current JavaScript function scope
-    abstract TransformArguments : unit -> Expression
-    override this.TransformArguments () = Arguments 
+    abstract TransformArguments : unit -> VOption<Expression>
+    override this.TransformArguments () =
+        VNone
+    member this.TransformArguments' () = match this.TransformArguments () with VSome x -> x | VNone -> Arguments 
     /// Gets the value of a variable
-    abstract TransformVar : Variable:Id -> Expression
-    override this.TransformVar a = Var (this.TransformId a)
+    abstract TransformVar : Variable:Id -> VOption<Expression>
+    override this.TransformVar a =
+        match this.TransformId a with
+        | VNone -> VNone
+        | tra -> Var (VOption.defaultValue a tra) |> VSome
+    member this.TransformVar' a = match this.TransformVar a with VSome x -> x | VNone -> Var a
     /// Contains a literal value
-    abstract TransformValue : Value:Literal -> Expression
-    override this.TransformValue a = Value (a)
+    abstract TransformValue : Value:Literal -> VOption<Expression>
+    override this.TransformValue a =
+        VNone
+    member this.TransformValue' a = match this.TransformValue a with VSome x -> x | VNone -> Value a
     /// Function application with extra information. The `pure` field should be true only when the function called has no side effects, so the side effects of the expression is the same as evaluating `func` then the expressions in the `arguments` list. The `knownLength` field should be `Some x` only when the function is known to have `x` number of arguments and does not use the `this` value.
-    abstract TransformApplication : Func:Expression * Arguments:list<Expression> * Pure:Purity * KnownLength:option<int> -> Expression
-    override this.TransformApplication (a, b, c, d) = Application (this.TransformExpression a, List.map this.TransformExpression b, c, d)
+    abstract TransformApplication : Func:Expression * Arguments:list<Expression> * Pure:Purity * KnownLength:option<int> -> VOption<Expression>
+    override this.TransformApplication (a, b, c, d) =
+        match this.TransformExpression a, this.TransformExpressionList b with
+        | VNone, VNone -> VNone
+        | tra, trb -> Application (VOption.defaultValue a tra, VOption.defaultValue b trb, c, d) |> VSome
+    member this.TransformApplication' (a, b, c, d) = match this.TransformApplication (a, b, c, d) with VSome x -> x | VNone -> Application (a, b, c, d)
     /// Function declaration
-    abstract TransformFunction : Parameters:list<Id> * Body:Statement -> Expression
-    override this.TransformFunction (a, b) = Function (List.map this.TransformId a, this.TransformStatement b)
+    abstract TransformFunction : Parameters:list<Id> * Body:Statement -> VOption<Expression>
+    override this.TransformFunction (a, b) =
+        match this.TransformIdList a, this.TransformStatement b with
+        | VNone, VNone -> VNone
+        | tra, trb -> Function (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformFunction' (a, b) = match this.TransformFunction (a, b) with VSome x -> x | VNone -> Function (a, b)
     /// Variable set
-    abstract TransformVarSet : Variable:Id * Value:Expression -> Expression
-    override this.TransformVarSet (a, b) = VarSet (this.TransformId a, this.TransformExpression b)
+    abstract TransformVarSet : Variable:Id * Value:Expression -> VOption<Expression>
+    override this.TransformVarSet (a, b) =
+        match this.TransformId a, this.TransformExpression b with
+        | VNone, VNone -> VNone
+        | tra, trb -> VarSet (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformVarSet' (a, b) = match this.TransformVarSet (a, b) with VSome x -> x | VNone -> VarSet (a, b)
     /// Sequential evaluation of expressions, value is taken from the last
-    abstract TransformSequential : Expressions:list<Expression> -> Expression
-    override this.TransformSequential a = Sequential (List.map this.TransformExpression a)
+    abstract TransformSequential : Expressions:list<Expression> -> VOption<Expression>
+    override this.TransformSequential a =
+        match this.TransformExpressionList a with
+        | VNone -> VNone
+        | tra -> Sequential (VOption.defaultValue a tra) |> VSome
+    member this.TransformSequential' a = match this.TransformSequential a with VSome x -> x | VNone -> Sequential a
     /// Creating a new array
-    abstract TransformNewArray : Items:list<Expression> -> Expression
-    override this.TransformNewArray a = NewArray (List.map this.TransformExpression a)
+    abstract TransformNewArray : Items:list<Expression> -> VOption<Expression>
+    override this.TransformNewArray a =
+        match this.TransformExpressionList a with
+        | VNone -> VNone
+        | tra -> NewArray (VOption.defaultValue a tra) |> VSome
+    member this.TransformNewArray' a = match this.TransformNewArray a with VSome x -> x | VNone -> NewArray a
     /// Conditional operation
-    abstract TransformConditional : Condition:Expression * WhenTrue:Expression * WhenFalse:Expression -> Expression
-    override this.TransformConditional (a, b, c) = Conditional (this.TransformExpression a, this.TransformExpression b, this.TransformExpression c)
+    abstract TransformConditional : Condition:Expression * WhenTrue:Expression * WhenFalse:Expression -> VOption<Expression>
+    override this.TransformConditional (a, b, c) =
+        match this.TransformExpression a, this.TransformExpression b, this.TransformExpression c with
+        | VNone, VNone, VNone -> VNone
+        | tra, trb, trc -> Conditional (VOption.defaultValue a tra, VOption.defaultValue b trb, VOption.defaultValue c trc) |> VSome
+    member this.TransformConditional' (a, b, c) = match this.TransformConditional (a, b, c) with VSome x -> x | VNone -> Conditional (a, b, c)
     /// Indexer get without side effects
-    abstract TransformItemGet : Object:Expression * Item:Expression * Pure:Purity -> Expression
-    override this.TransformItemGet (a, b, c) = ItemGet (this.TransformExpression a, this.TransformExpression b, c)
+    abstract TransformItemGet : Object:Expression * Item:Expression * Pure:Purity -> VOption<Expression>
+    override this.TransformItemGet (a, b, c) =
+        match this.TransformExpression a, this.TransformExpression b with
+        | VNone, VNone -> VNone
+        | tra, trb -> ItemGet (VOption.defaultValue a tra, VOption.defaultValue b trb, c) |> VSome
+    member this.TransformItemGet' (a, b, c) = match this.TransformItemGet (a, b, c) with VSome x -> x | VNone -> ItemGet (a, b, c)
     /// Indexer set
-    abstract TransformItemSet : Object:Expression * Item:Expression * Value:Expression -> Expression
-    override this.TransformItemSet (a, b, c) = ItemSet (this.TransformExpression a, this.TransformExpression b, this.TransformExpression c)
+    abstract TransformItemSet : Object:Expression * Item:Expression * Value:Expression -> VOption<Expression>
+    override this.TransformItemSet (a, b, c) =
+        match this.TransformExpression a, this.TransformExpression b, this.TransformExpression c with
+        | VNone, VNone, VNone -> VNone
+        | tra, trb, trc -> ItemSet (VOption.defaultValue a tra, VOption.defaultValue b trb, VOption.defaultValue c trc) |> VSome
+    member this.TransformItemSet' (a, b, c) = match this.TransformItemSet (a, b, c) with VSome x -> x | VNone -> ItemSet (a, b, c)
     /// Binary operation
-    abstract TransformBinary : Left:Expression * Operator:BinaryOperator * Right:Expression -> Expression
-    override this.TransformBinary (a, b, c) = Binary (this.TransformExpression a, b, this.TransformExpression c)
+    abstract TransformBinary : Left:Expression * Operator:BinaryOperator * Right:Expression -> VOption<Expression>
+    override this.TransformBinary (a, b, c) =
+        match this.TransformExpression a, this.TransformExpression c with
+        | VNone, VNone -> VNone
+        | tra, trc -> Binary (VOption.defaultValue a tra, b, VOption.defaultValue c trc) |> VSome
+    member this.TransformBinary' (a, b, c) = match this.TransformBinary (a, b, c) with VSome x -> x | VNone -> Binary (a, b, c)
     /// Binary operation mutating right side
-    abstract TransformMutatingBinary : Left:Expression * Operator:MutatingBinaryOperator * Right:Expression -> Expression
-    override this.TransformMutatingBinary (a, b, c) = MutatingBinary (this.TransformExpression a, b, this.TransformExpression c)
+    abstract TransformMutatingBinary : Left:Expression * Operator:MutatingBinaryOperator * Right:Expression -> VOption<Expression>
+    override this.TransformMutatingBinary (a, b, c) =
+        match this.TransformExpression a, this.TransformExpression c with
+        | VNone, VNone -> VNone
+        | tra, trc -> MutatingBinary (VOption.defaultValue a tra, b, VOption.defaultValue c trc) |> VSome
+    member this.TransformMutatingBinary' (a, b, c) = match this.TransformMutatingBinary (a, b, c) with VSome x -> x | VNone -> MutatingBinary (a, b, c)
     /// Unary operation
-    abstract TransformUnary : Operator:UnaryOperator * Expression:Expression -> Expression
-    override this.TransformUnary (a, b) = Unary (a, this.TransformExpression b)
+    abstract TransformUnary : Operator:UnaryOperator * Expression:Expression -> VOption<Expression>
+    override this.TransformUnary (a, b) =
+        match this.TransformExpression b with
+        | VNone -> VNone
+        | trb -> Unary (a, VOption.defaultValue b trb) |> VSome
+    member this.TransformUnary' (a, b) = match this.TransformUnary (a, b) with VSome x -> x | VNone -> Unary (a, b)
     /// Unary operation mutating value
-    abstract TransformMutatingUnary : Operator:MutatingUnaryOperator * Expression:Expression -> Expression
-    override this.TransformMutatingUnary (a, b) = MutatingUnary (a, this.TransformExpression b)
+    abstract TransformMutatingUnary : Operator:MutatingUnaryOperator * Expression:Expression -> VOption<Expression>
+    override this.TransformMutatingUnary (a, b) =
+        match this.TransformExpression b with
+        | VNone -> VNone
+        | trb -> MutatingUnary (a, VOption.defaultValue b trb) |> VSome
+    member this.TransformMutatingUnary' (a, b) = match this.TransformMutatingUnary (a, b) with VSome x -> x | VNone -> MutatingUnary (a, b)
     /// Original source location for an expression
-    abstract TransformExprSourcePos : Range:SourcePos * Expression:Expression -> Expression
+    abstract TransformExprSourcePos : Range:SourcePos * Expression:Expression -> VOption<Expression>
     override this.TransformExprSourcePos (a, b) =
         match this.TransformExpression b with
-        | ExprSourcePos (_, bt) | bt -> ExprSourcePos (a, bt)
+        | VNone -> VNone
+        | VSome (ExprSourcePos (_, bt) | bt) -> ExprSourcePos (a, bt) |> VSome
     /// Temporary - Method of F# object expressions
-    abstract TransformFuncWithThis : ThisParam:Id * Parameters:list<Id> * Body:Statement -> Expression
-    override this.TransformFuncWithThis (a, b, c) = FuncWithThis (this.TransformId a, List.map this.TransformId b, this.TransformStatement c)
+    abstract TransformFuncWithThis : ThisParam:Id * Parameters:list<Id> * Body:Statement -> VOption<Expression>
+    override this.TransformFuncWithThis (a, b, c) =
+        match this.TransformId a, this.TransformIdList b, this.TransformStatement c with
+        | VNone, VNone, VNone -> VNone
+        | tra, trb, trc -> FuncWithThis (VOption.defaultValue a tra, VOption.defaultValue b trb, VOption.defaultValue c trc) |> VSome
+    member this.TransformFuncWithThis' (a, b, c) = match this.TransformFuncWithThis (a, b, c) with VSome x -> x | VNone -> FuncWithThis (a, b, c)
     /// Temporary - Refers to the class from a static method
-    abstract TransformSelf : unit -> Expression
-    override this.TransformSelf () = Self 
+    abstract TransformSelf : unit -> VOption<Expression>
+    override this.TransformSelf () =
+        VNone
+    member this.TransformSelf' () = match this.TransformSelf () with VSome x -> x | VNone -> Self 
     /// Temporary - Refers to the base class from an instance method
-    abstract TransformBase : unit -> Expression
-    override this.TransformBase () = Base 
+    abstract TransformBase : unit -> VOption<Expression>
+    override this.TransformBase () =
+        VNone
+    member this.TransformBase' () = match this.TransformBase () with VSome x -> x | VNone -> Base 
     /// .NET - Method call
-    abstract TransformCall : ThisObject:option<Expression> * TypeDefinition:Concrete<TypeDefinition> * Method:Concrete<Method> * Arguments:list<Expression> -> Expression
-    override this.TransformCall (a, b, c, d) = Call (Option.map this.TransformExpression a, b, c, List.map this.TransformExpression d)
+    abstract TransformCall : ThisObject:option<Expression> * TypeDefinition:Concrete<TypeDefinition> * Method:Concrete<Method> * Arguments:list<Expression> -> VOption<Expression>
+    override this.TransformCall (a, b, c, d) =
+        match this.TransformExpressionOption a, this.TransformExpressionList d with
+        | VNone, VNone -> VNone
+        | tra, trd -> Call (VOption.defaultValue a tra, b, c, VOption.defaultValue d trd) |> VSome
+    member this.TransformCall' (a, b, c, d) = match this.TransformCall (a, b, c, d) with VSome x -> x | VNone -> Call (a, b, c, d)
     /// Temporary - Partial application, workaround for FCS issue #414
-    abstract TransformCallNeedingMoreArgs : ThisObject:option<Expression> * TypeDefinition:Concrete<TypeDefinition> * Method:Concrete<Method> * Arguments:list<Expression> -> Expression
-    override this.TransformCallNeedingMoreArgs (a, b, c, d) = CallNeedingMoreArgs (Option.map this.TransformExpression a, b, c, List.map this.TransformExpression d)
+    abstract TransformCallNeedingMoreArgs : ThisObject:option<Expression> * TypeDefinition:Concrete<TypeDefinition> * Method:Concrete<Method> * Arguments:list<Expression> -> VOption<Expression>
+    override this.TransformCallNeedingMoreArgs (a, b, c, d) =
+        match this.TransformExpressionOption a, this.TransformExpressionList d with
+        | VNone, VNone -> VNone
+        | tra, trd -> CallNeedingMoreArgs (VOption.defaultValue a tra, b, c, VOption.defaultValue d trd) |> VSome
+    member this.TransformCallNeedingMoreArgs' (a, b, c, d) = match this.TransformCallNeedingMoreArgs (a, b, c, d) with VSome x -> x | VNone -> CallNeedingMoreArgs (a, b, c, d)
     /// Temporary - F# function application
-    abstract TransformCurriedApplication : Func:Expression * Arguments:list<Expression> -> Expression
-    override this.TransformCurriedApplication (a, b) = CurriedApplication (this.TransformExpression a, List.map this.TransformExpression b)
+    abstract TransformCurriedApplication : Func:Expression * Arguments:list<Expression> -> VOption<Expression>
+    override this.TransformCurriedApplication (a, b) =
+        match this.TransformExpression a, this.TransformExpressionList b with
+        | VNone, VNone -> VNone
+        | tra, trb -> CurriedApplication (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformCurriedApplication' (a, b) = match this.TransformCurriedApplication (a, b) with VSome x -> x | VNone -> CurriedApplication (a, b)
     /// Temporary - optimized curried or tupled F# function argument
-    abstract TransformOptimizedFSharpArg : FuncVar:Expression * Opt:FuncArgOptimization -> Expression
-    override this.TransformOptimizedFSharpArg (a, b) = OptimizedFSharpArg (this.TransformExpression a, b)
+    abstract TransformOptimizedFSharpArg : FuncVar:Expression * Opt:FuncArgOptimization -> VOption<Expression>
+    override this.TransformOptimizedFSharpArg (a, b) =
+        match this.TransformExpression a with
+        | VNone -> VNone
+        | tra -> OptimizedFSharpArg (VOption.defaultValue a tra, b) |> VSome
+    member this.TransformOptimizedFSharpArg' (a, b) = match this.TransformOptimizedFSharpArg (a, b) with VSome x -> x | VNone -> OptimizedFSharpArg (a, b)
     /// .NET - Constructor call
-    abstract TransformCtor : TypeDefinition:Concrete<TypeDefinition> * Ctor:Constructor * Arguments:list<Expression> -> Expression
-    override this.TransformCtor (a, b, c) = Ctor (a, b, List.map this.TransformExpression c)
+    abstract TransformCtor : TypeDefinition:Concrete<TypeDefinition> * Ctor:Constructor * Arguments:list<Expression> -> VOption<Expression>
+    override this.TransformCtor (a, b, c) =
+        match this.TransformExpressionList c with
+        | VNone -> VNone
+        | trc -> Ctor (a, b, VOption.defaultValue c trc) |> VSome
+    member this.TransformCtor' (a, b, c) = match this.TransformCtor (a, b, c) with VSome x -> x | VNone -> Ctor (a, b, c)
     /// .NET - Base constructor call
-    abstract TransformBaseCtor : ThisObject:Expression * TypeDefinition:Concrete<TypeDefinition> * Ctor:Constructor * Arguments:list<Expression> -> Expression
-    override this.TransformBaseCtor (a, b, c, d) = BaseCtor (this.TransformExpression a, b, c, List.map this.TransformExpression d)
+    abstract TransformBaseCtor : ThisObject:Expression * TypeDefinition:Concrete<TypeDefinition> * Ctor:Constructor * Arguments:list<Expression> -> VOption<Expression>
+    override this.TransformBaseCtor (a, b, c, d) =
+        match this.TransformExpression a, this.TransformExpressionList d with
+        | VNone, VNone -> VNone
+        | tra, trd -> BaseCtor (VOption.defaultValue a tra, b, c, VOption.defaultValue d trd) |> VSome
+    member this.TransformBaseCtor' (a, b, c, d) = match this.TransformBaseCtor (a, b, c, d) with VSome x -> x | VNone -> BaseCtor (a, b, c, d)
     /// .NET - Creating an object from a plain object
-    abstract TransformCopyCtor : TypeDefinition:TypeDefinition * Object:Expression -> Expression
-    override this.TransformCopyCtor (a, b) = CopyCtor (a, this.TransformExpression b)
+    abstract TransformCopyCtor : TypeDefinition:TypeDefinition * Object:Expression -> VOption<Expression>
+    override this.TransformCopyCtor (a, b) =
+        match this.TransformExpression b with
+        | VNone -> VNone
+        | trb -> CopyCtor (a, VOption.defaultValue b trb) |> VSome
+    member this.TransformCopyCtor' (a, b) = match this.TransformCopyCtor (a, b) with VSome x -> x | VNone -> CopyCtor (a, b)
     /// .NET - Static constructor
-    abstract TransformCctor : TypeDefinition:TypeDefinition -> Expression
-    override this.TransformCctor a = Cctor (a)
+    abstract TransformCctor : TypeDefinition:TypeDefinition -> VOption<Expression>
+    override this.TransformCctor a =
+        VNone
+    member this.TransformCctor' a = match this.TransformCctor a with VSome x -> x | VNone -> Cctor a
     /// .NET - Field getter
-    abstract TransformFieldGet : ThisObject:option<Expression> * TypeDefinition:Concrete<TypeDefinition> * Field:string -> Expression
-    override this.TransformFieldGet (a, b, c) = FieldGet (Option.map this.TransformExpression a, b, c)
+    abstract TransformFieldGet : ThisObject:option<Expression> * TypeDefinition:Concrete<TypeDefinition> * Field:string -> VOption<Expression>
+    override this.TransformFieldGet (a, b, c) =
+        match this.TransformExpressionOption a with
+        | VNone -> VNone
+        | tra -> FieldGet (VOption.defaultValue a tra, b, c) |> VSome
+    member this.TransformFieldGet' (a, b, c) = match this.TransformFieldGet (a, b, c) with VSome x -> x | VNone -> FieldGet (a, b, c)
     /// .NET - Field setter
-    abstract TransformFieldSet : ThisObject:option<Expression> * TypeDefinition:Concrete<TypeDefinition> * Field:string * Value:Expression -> Expression
-    override this.TransformFieldSet (a, b, c, d) = FieldSet (Option.map this.TransformExpression a, b, c, this.TransformExpression d)
+    abstract TransformFieldSet : ThisObject:option<Expression> * TypeDefinition:Concrete<TypeDefinition> * Field:string * Value:Expression -> VOption<Expression>
+    override this.TransformFieldSet (a, b, c, d) =
+        match this.TransformExpressionOption a, this.TransformExpression d with
+        | VNone, VNone -> VNone
+        | tra, trd -> FieldSet (VOption.defaultValue a tra, b, c, VOption.defaultValue d trd) |> VSome
+    member this.TransformFieldSet' (a, b, c, d) = match this.TransformFieldSet (a, b, c, d) with VSome x -> x | VNone -> FieldSet (a, b, c, d)
     /// .NET - An immutable value definition used only in expression body
-    abstract TransformLet : Identifier:Id * Value:Expression * Body:Expression -> Expression
-    override this.TransformLet (a, b, c) = Let (this.TransformId a, this.TransformExpression b, this.TransformExpression c)
+    abstract TransformLet : Identifier:Id * Value:Expression * Body:Expression -> VOption<Expression>
+    override this.TransformLet (a, b, c) =
+        match this.TransformId a, this.TransformExpression b, this.TransformExpression c with
+        | VNone, VNone, VNone -> VNone
+        | tra, trb, trc -> Let (VOption.defaultValue a tra, VOption.defaultValue b trb, VOption.defaultValue c trc) |> VSome
+    member this.TransformLet' (a, b, c) = match this.TransformLet (a, b, c) with VSome x -> x | VNone -> Let (a, b, c)
     /// .NET - An expression-level variable declaration
-    abstract TransformNewVar : Variable:Id * Value:Expression -> Expression
-    override this.TransformNewVar (a, b) = NewVar (this.TransformId a, this.TransformExpression b)
+    abstract TransformNewVar : Variable:Id * Value:Expression -> VOption<Expression>
+    override this.TransformNewVar (a, b) =
+        match this.TransformId a, this.TransformExpression b with
+        | VNone, VNone -> VNone
+        | tra, trb -> NewVar (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformNewVar' (a, b) = match this.TransformNewVar (a, b) with VSome x -> x | VNone -> NewVar (a, b)
     /// .NET - Null-coalescing
-    abstract TransformCoalesce : Expression:Expression * Type:Type * WhenNull:Expression -> Expression
-    override this.TransformCoalesce (a, b, c) = Coalesce (this.TransformExpression a, b, this.TransformExpression c)
+    abstract TransformCoalesce : Expression:Expression * Type:Type * WhenNull:Expression -> VOption<Expression>
+    override this.TransformCoalesce (a, b, c) =
+        match this.TransformExpression a, this.TransformExpression c with
+        | VNone, VNone -> VNone
+        | tra, trc -> Coalesce (VOption.defaultValue a tra, b, VOption.defaultValue c trc) |> VSome
+    member this.TransformCoalesce' (a, b, c) = match this.TransformCoalesce (a, b, c) with VSome x -> x | VNone -> Coalesce (a, b, c)
     /// .NET - Type check, returns bool
-    abstract TransformTypeCheck : Expression:Expression * Type:Type -> Expression
-    override this.TransformTypeCheck (a, b) = TypeCheck (this.TransformExpression a, b)
+    abstract TransformTypeCheck : Expression:Expression * Type:Type -> VOption<Expression>
+    override this.TransformTypeCheck (a, b) =
+        match this.TransformExpression a with
+        | VNone -> VNone
+        | tra -> TypeCheck (VOption.defaultValue a tra, b) |> VSome
+    member this.TransformTypeCheck' (a, b) = match this.TransformTypeCheck (a, b) with VSome x -> x | VNone -> TypeCheck (a, b)
     /// .NET - Looks up the JavaScript name of an override/implementation, used inside F# object expressions
-    abstract TransformOverrideName : TypeDefinition:TypeDefinition * Method:Method -> Expression
-    override this.TransformOverrideName (a, b) = OverrideName (a, b)
+    abstract TransformOverrideName : TypeDefinition:TypeDefinition * Method:Method -> VOption<Expression>
+    override this.TransformOverrideName (a, b) =
+        VNone
+    member this.TransformOverrideName' (a, b) = match this.TransformOverrideName (a, b) with VSome x -> x | VNone -> OverrideName (a, b)
     /// .NET - Creates a new delegate
-    abstract TransformNewDelegate : ThisObject:option<Expression> * TypeDefinition:Concrete<TypeDefinition> * Method:Concrete<Method> -> Expression
-    override this.TransformNewDelegate (a, b, c) = NewDelegate (Option.map this.TransformExpression a, b, c)
+    abstract TransformNewDelegate : ThisObject:option<Expression> * TypeDefinition:Concrete<TypeDefinition> * Method:Concrete<Method> -> VOption<Expression>
+    override this.TransformNewDelegate (a, b, c) =
+        match this.TransformExpressionOption a with
+        | VNone -> VNone
+        | tra -> NewDelegate (VOption.defaultValue a tra, b, c) |> VSome
+    member this.TransformNewDelegate' (a, b, c) = match this.TransformNewDelegate (a, b, c) with VSome x -> x | VNone -> NewDelegate (a, b, c)
     /// .NET - Statement inside an expression. Result can be an identifier for a variable which is not explicitly defined inside the statement
-    abstract TransformStatementExpr : Statement:Statement * Result:option<Id> -> Expression
-    override this.TransformStatementExpr (a, b) = StatementExpr (this.TransformStatement a, Option.map this.TransformId b)
+    abstract TransformStatementExpr : Statement:Statement * Result:option<Id> -> VOption<Expression>
+    override this.TransformStatementExpr (a, b) =
+        match this.TransformStatement a, this.TransformIdOption b with
+        | VNone, VNone -> VNone
+        | tra, trb -> StatementExpr (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformStatementExpr' (a, b) = match this.TransformStatementExpr (a, b) with VSome x -> x | VNone -> StatementExpr (a, b)
     /// .NET - F# let rec
-    abstract TransformLetRec : Bindings:list<Id * Expression> * Body:Expression -> Expression
-    override this.TransformLetRec (a, b) = LetRec (List.map (fun (a, b) -> this.TransformId a, this.TransformExpression b) a, this.TransformExpression b)
+    abstract TransformLetRec : Bindings:list<Id * Expression> * Body:Expression -> VOption<Expression>
+    override this.TransformLetRec (a, b) =
+        match VOption.bindList (VOption.bindPair this.TransformId this.TransformExpression) a, this.TransformExpression b with
+        | VNone, VNone -> VNone
+        | tra, trb -> LetRec (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformLetRec' (a, b) = match this.TransformLetRec (a, b) with VSome x -> x | VNone -> LetRec (a, b)
     /// .NET - F# record constructor
-    abstract TransformNewRecord : TypeDefinition:Concrete<TypeDefinition> * Fields:list<Expression> -> Expression
-    override this.TransformNewRecord (a, b) = NewRecord (a, List.map this.TransformExpression b)
+    abstract TransformNewRecord : TypeDefinition:Concrete<TypeDefinition> * Fields:list<Expression> -> VOption<Expression>
+    override this.TransformNewRecord (a, b) =
+        match this.TransformExpressionList b with
+        | VNone -> VNone
+        | trb -> NewRecord (a, VOption.defaultValue b trb) |> VSome
+    member this.TransformNewRecord' (a, b) = match this.TransformNewRecord (a, b) with VSome x -> x | VNone -> NewRecord (a, b)
     /// .NET - F# union case constructor
-    abstract TransformNewUnionCase : TypeDefinition:Concrete<TypeDefinition> * UnionCase:string * Fields:list<Expression> -> Expression
-    override this.TransformNewUnionCase (a, b, c) = NewUnionCase (a, b, List.map this.TransformExpression c)
+    abstract TransformNewUnionCase : TypeDefinition:Concrete<TypeDefinition> * UnionCase:string * Fields:list<Expression> -> VOption<Expression>
+    override this.TransformNewUnionCase (a, b, c) =
+        match this.TransformExpressionList c with
+        | VNone -> VNone
+        | trc -> NewUnionCase (a, b, VOption.defaultValue c trc) |> VSome
+    member this.TransformNewUnionCase' (a, b, c) = match this.TransformNewUnionCase (a, b, c) with VSome x -> x | VNone -> NewUnionCase (a, b, c)
     /// .NET - F# union case test
-    abstract TransformUnionCaseTest : Expression:Expression * TypeDefinition:Concrete<TypeDefinition> * UnionCase:string -> Expression
-    override this.TransformUnionCaseTest (a, b, c) = UnionCaseTest (this.TransformExpression a, b, c)
+    abstract TransformUnionCaseTest : Expression:Expression * TypeDefinition:Concrete<TypeDefinition> * UnionCase:string -> VOption<Expression>
+    override this.TransformUnionCaseTest (a, b, c) =
+        match this.TransformExpression a with
+        | VNone -> VNone
+        | tra -> UnionCaseTest (VOption.defaultValue a tra, b, c) |> VSome
+    member this.TransformUnionCaseTest' (a, b, c) = match this.TransformUnionCaseTest (a, b, c) with VSome x -> x | VNone -> UnionCaseTest (a, b, c)
     /// .NET - F# union case field getter
-    abstract TransformUnionCaseGet : Expression:Expression * TypeDefinition:Concrete<TypeDefinition> * UnionCase:string * Field:string -> Expression
-    override this.TransformUnionCaseGet (a, b, c, d) = UnionCaseGet (this.TransformExpression a, b, c, d)
+    abstract TransformUnionCaseGet : Expression:Expression * TypeDefinition:Concrete<TypeDefinition> * UnionCase:string * Field:string -> VOption<Expression>
+    override this.TransformUnionCaseGet (a, b, c, d) =
+        match this.TransformExpression a with
+        | VNone -> VNone
+        | tra -> UnionCaseGet (VOption.defaultValue a tra, b, c, d) |> VSome
+    member this.TransformUnionCaseGet' (a, b, c, d) = match this.TransformUnionCaseGet (a, b, c, d) with VSome x -> x | VNone -> UnionCaseGet (a, b, c, d)
     /// .NET - F# union case tag getter
-    abstract TransformUnionCaseTag : Expression:Expression * TypeDefinition:Concrete<TypeDefinition> -> Expression
-    override this.TransformUnionCaseTag (a, b) = UnionCaseTag (this.TransformExpression a, b)
+    abstract TransformUnionCaseTag : Expression:Expression * TypeDefinition:Concrete<TypeDefinition> -> VOption<Expression>
+    override this.TransformUnionCaseTag (a, b) =
+        match this.TransformExpression a with
+        | VNone -> VNone
+        | tra -> UnionCaseTag (VOption.defaultValue a tra, b) |> VSome
+    member this.TransformUnionCaseTag' (a, b) = match this.TransformUnionCaseTag (a, b) with VSome x -> x | VNone -> UnionCaseTag (a, b)
     /// .NET - F# successful match
-    abstract TransformMatchSuccess : Index:int * Captures:list<Expression> -> Expression
-    override this.TransformMatchSuccess (a, b) = MatchSuccess (a, List.map this.TransformExpression b)
+    abstract TransformMatchSuccess : Index:int * Captures:list<Expression> -> VOption<Expression>
+    override this.TransformMatchSuccess (a, b) =
+        match this.TransformExpressionList b with
+        | VNone -> VNone
+        | trb -> MatchSuccess (a, VOption.defaultValue b trb) |> VSome
+    member this.TransformMatchSuccess' (a, b) = match this.TransformMatchSuccess (a, b) with VSome x -> x | VNone -> MatchSuccess (a, b)
     /// .NET - Method call
-    abstract TransformTraitCall : ThisObject:option<Expression> * ObjectType:list<Type> * Method:Concrete<Method> * Arguments:list<Expression> -> Expression
-    override this.TransformTraitCall (a, b, c, d) = TraitCall (Option.map this.TransformExpression a, b, c, List.map this.TransformExpression d)
+    abstract TransformTraitCall : ThisObject:option<Expression> * ObjectType:list<Type> * Method:Concrete<Method> * Arguments:list<Expression> -> VOption<Expression>
+    override this.TransformTraitCall (a, b, c, d) =
+        match this.TransformExpressionOption a, this.TransformExpressionList d with
+        | VNone, VNone -> VNone
+        | tra, trd -> TraitCall (VOption.defaultValue a tra, b, c, VOption.defaultValue d trd) |> VSome
+    member this.TransformTraitCall' (a, b, c, d) = match this.TransformTraitCall (a, b, c, d) with VSome x -> x | VNone -> TraitCall (a, b, c, d)
     /// Temporary - C# await expression
-    abstract TransformAwait : Expression:Expression -> Expression
-    override this.TransformAwait a = Await (this.TransformExpression a)
+    abstract TransformAwait : Expression:Expression -> VOption<Expression>
+    override this.TransformAwait a =
+        match this.TransformExpression a with
+        | VNone -> VNone
+        | tra -> Await (VOption.defaultValue a tra) |> VSome
+    member this.TransformAwait' a = match this.TransformAwait a with VSome x -> x | VNone -> Await a
     /// Temporary - C# named parameter
-    abstract TransformNamedParameter : Ordinal:int * Expression:Expression -> Expression
-    override this.TransformNamedParameter (a, b) = NamedParameter (a, this.TransformExpression b)
+    abstract TransformNamedParameter : Ordinal:int * Expression:Expression -> VOption<Expression>
+    override this.TransformNamedParameter (a, b) =
+        match this.TransformExpression b with
+        | VNone -> VNone
+        | trb -> NamedParameter (a, VOption.defaultValue b trb) |> VSome
+    member this.TransformNamedParameter' (a, b) = match this.TransformNamedParameter (a, b) with VSome x -> x | VNone -> NamedParameter (a, b)
     /// Temporary - C# ref or out parameter
-    abstract TransformRefOrOutParameter : Expression:Expression -> Expression
-    override this.TransformRefOrOutParameter a = RefOrOutParameter (this.TransformExpression a)
+    abstract TransformRefOrOutParameter : Expression:Expression -> VOption<Expression>
+    override this.TransformRefOrOutParameter a =
+        match this.TransformExpression a with
+        | VNone -> VNone
+        | tra -> RefOrOutParameter (VOption.defaultValue a tra) |> VSome
+    member this.TransformRefOrOutParameter' a = match this.TransformRefOrOutParameter a with VSome x -> x | VNone -> RefOrOutParameter a
     /// Temporary - C# complex element in initializer expression
-    abstract TransformComplexElement : Items:list<Expression> -> Expression
-    override this.TransformComplexElement a = ComplexElement (List.map this.TransformExpression a)
+    abstract TransformComplexElement : Items:list<Expression> -> VOption<Expression>
+    override this.TransformComplexElement a =
+        match this.TransformExpressionList a with
+        | VNone -> VNone
+        | tra -> ComplexElement (VOption.defaultValue a tra) |> VSome
+    member this.TransformComplexElement' a = match this.TransformComplexElement a with VSome x -> x | VNone -> ComplexElement a
     /// JavaSript object
-    abstract TransformObject : Properties:list<string * Expression> -> Expression
-    override this.TransformObject a = Object (List.map (fun (a, b) -> a, this.TransformExpression b) a)
+    abstract TransformObject : Properties:list<string * Expression> -> VOption<Expression>
+    override this.TransformObject a =
+        match VOption.bindList (VOption.bindPair VSome this.TransformExpression) a with
+        | VNone -> VNone
+        | tra -> Object (VOption.defaultValue a tra) |> VSome
+    member this.TransformObject' a = match this.TransformObject a with VSome x -> x | VNone -> Object a
     /// A global value by path, list is reversed
-    abstract TransformGlobalAccess : Address:Address -> Expression
-    override this.TransformGlobalAccess a = GlobalAccess (a)
+    abstract TransformGlobalAccess : Address:Address -> VOption<Expression>
+    override this.TransformGlobalAccess a =
+        VNone
+    member this.TransformGlobalAccess' a = match this.TransformGlobalAccess a with VSome x -> x | VNone -> GlobalAccess a
     /// JavaScript 'new' call
-    abstract TransformNew : Func:Expression * Arguments:list<Expression> -> Expression
-    override this.TransformNew (a, b) = New (this.TransformExpression a, List.map this.TransformExpression b)
+    abstract TransformNew : Func:Expression * Arguments:list<Expression> -> VOption<Expression>
+    override this.TransformNew (a, b) =
+        match this.TransformExpression a, this.TransformExpressionList b with
+        | VNone, VNone -> VNone
+        | tra, trb -> New (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformNew' (a, b) = match this.TransformNew (a, b) with VSome x -> x | VNone -> New (a, b)
     /// Temporary - A hole in an expression for inlining
-    abstract TransformHole : Index:int -> Expression
-    override this.TransformHole a = Hole (a)
+    abstract TransformHole : Index:int -> VOption<Expression>
+    override this.TransformHole a =
+        VNone
+    member this.TransformHole' a = match this.TransformHole a with VSome x -> x | VNone -> Hole a
     /// Empty statement
-    abstract TransformEmpty : unit -> Statement
-    override this.TransformEmpty () = Empty 
+    abstract TransformEmpty : unit -> VOption<Statement>
+    override this.TransformEmpty () =
+        VNone
+    member this.TransformEmpty' () = match this.TransformEmpty () with VSome x -> x | VNone -> Empty 
     /// JavaScript break statement
-    abstract TransformBreak : Label:option<Id> -> Statement
-    override this.TransformBreak a = Break (Option.map this.TransformId a)
+    abstract TransformBreak : Label:option<Id> -> VOption<Statement>
+    override this.TransformBreak a =
+        match this.TransformIdOption a with
+        | VNone -> VNone
+        | tra -> Break (VOption.defaultValue a tra) |> VSome
+    member this.TransformBreak' a = match this.TransformBreak a with VSome x -> x | VNone -> Break a
     /// JavaScript continue statement
-    abstract TransformContinue : Label:option<Id> -> Statement
-    override this.TransformContinue a = Continue (Option.map this.TransformId a)
+    abstract TransformContinue : Label:option<Id> -> VOption<Statement>
+    override this.TransformContinue a =
+        match this.TransformIdOption a with
+        | VNone -> VNone
+        | tra -> Continue (VOption.defaultValue a tra) |> VSome
+    member this.TransformContinue' a = match this.TransformContinue a with VSome x -> x | VNone -> Continue a
     /// Expression as statement
-    abstract TransformExprStatement : Expression:Expression -> Statement
-    override this.TransformExprStatement a = ExprStatement (this.TransformExpression a)
+    abstract TransformExprStatement : Expression:Expression -> VOption<Statement>
+    override this.TransformExprStatement a =
+        match this.TransformExpression a with
+        | VNone -> VNone
+        | tra -> ExprStatement (VOption.defaultValue a tra) |> VSome
+    member this.TransformExprStatement' a = match this.TransformExprStatement a with VSome x -> x | VNone -> ExprStatement a
     /// Return a value
-    abstract TransformReturn : Value:Expression -> Statement
-    override this.TransformReturn a = Return (this.TransformExpression a)
+    abstract TransformReturn : Value:Expression -> VOption<Statement>
+    override this.TransformReturn a =
+        match this.TransformExpression a with
+        | VNone -> VNone
+        | tra -> Return (VOption.defaultValue a tra) |> VSome
+    member this.TransformReturn' a = match this.TransformReturn a with VSome x -> x | VNone -> Return a
     /// Block of statements
-    abstract TransformBlock : Statements:list<Statement> -> Statement
-    override this.TransformBlock a = Block (List.map this.TransformStatement a)
+    abstract TransformBlock : Statements:list<Statement> -> VOption<Statement>
+    override this.TransformBlock a =
+        match this.TransformStatementList a with
+        | VNone -> VNone
+        | tra -> Block (VOption.defaultValue a tra) |> VSome
+    member this.TransformBlock' a = match this.TransformBlock a with VSome x -> x | VNone -> Block a
     /// Variable declaration
-    abstract TransformVarDeclaration : Variable:Id * Value:Expression -> Statement
-    override this.TransformVarDeclaration (a, b) = VarDeclaration (this.TransformId a, this.TransformExpression b)
+    abstract TransformVarDeclaration : Variable:Id * Value:Expression -> VOption<Statement>
+    override this.TransformVarDeclaration (a, b) =
+        match this.TransformId a, this.TransformExpression b with
+        | VNone, VNone -> VNone
+        | tra, trb -> VarDeclaration (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformVarDeclaration' (a, b) = match this.TransformVarDeclaration (a, b) with VSome x -> x | VNone -> VarDeclaration (a, b)
     /// Function declaration
-    abstract TransformFuncDeclaration : FuncId:Id * Parameters:list<Id> * Body:Statement -> Statement
-    override this.TransformFuncDeclaration (a, b, c) = FuncDeclaration (this.TransformId a, List.map this.TransformId b, this.TransformStatement c)
+    abstract TransformFuncDeclaration : FuncId:Id * Parameters:list<Id> * Body:Statement -> VOption<Statement>
+    override this.TransformFuncDeclaration (a, b, c) =
+        match this.TransformId a, this.TransformIdList b, this.TransformStatement c with
+        | VNone, VNone, VNone -> VNone
+        | tra, trb, trc -> FuncDeclaration (VOption.defaultValue a tra, VOption.defaultValue b trb, VOption.defaultValue c trc) |> VSome
+    member this.TransformFuncDeclaration' (a, b, c) = match this.TransformFuncDeclaration (a, b, c) with VSome x -> x | VNone -> FuncDeclaration (a, b, c)
     /// 'while' loop
-    abstract TransformWhile : Condition:Expression * Body:Statement -> Statement
-    override this.TransformWhile (a, b) = While (this.TransformExpression a, this.TransformStatement b)
+    abstract TransformWhile : Condition:Expression * Body:Statement -> VOption<Statement>
+    override this.TransformWhile (a, b) =
+        match this.TransformExpression a, this.TransformStatement b with
+        | VNone, VNone -> VNone
+        | tra, trb -> While (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformWhile' (a, b) = match this.TransformWhile (a, b) with VSome x -> x | VNone -> While (a, b)
     /// 'do..while' loop
-    abstract TransformDoWhile : Body:Statement * Condition:Expression -> Statement
-    override this.TransformDoWhile (a, b) = DoWhile (this.TransformStatement a, this.TransformExpression b)
+    abstract TransformDoWhile : Body:Statement * Condition:Expression -> VOption<Statement>
+    override this.TransformDoWhile (a, b) =
+        match this.TransformStatement a, this.TransformExpression b with
+        | VNone, VNone -> VNone
+        | tra, trb -> DoWhile (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformDoWhile' (a, b) = match this.TransformDoWhile (a, b) with VSome x -> x | VNone -> DoWhile (a, b)
     /// 'for' loop
-    abstract TransformFor : Initializer:option<Expression> * Condition:option<Expression> * Step:option<Expression> * Body:Statement -> Statement
-    override this.TransformFor (a, b, c, d) = For (Option.map this.TransformExpression a, Option.map this.TransformExpression b, Option.map this.TransformExpression c, this.TransformStatement d)
+    abstract TransformFor : Initializer:option<Expression> * Condition:option<Expression> * Step:option<Expression> * Body:Statement -> VOption<Statement>
+    override this.TransformFor (a, b, c, d) =
+        match this.TransformExpressionOption a, this.TransformExpressionOption b, this.TransformExpressionOption c, this.TransformStatement d with
+        | VNone, VNone, VNone, VNone -> VNone
+        | tra, trb, trc, trd -> For (VOption.defaultValue a tra, VOption.defaultValue b trb, VOption.defaultValue c trc, VOption.defaultValue d trd) |> VSome
+    member this.TransformFor' (a, b, c, d) = match this.TransformFor (a, b, c, d) with VSome x -> x | VNone -> For (a, b, c, d)
     /// JavaScript 'for .. in' loop
-    abstract TransformForIn : Variable:Id * Object:Expression * Body:Statement -> Statement
-    override this.TransformForIn (a, b, c) = ForIn (this.TransformId a, this.TransformExpression b, this.TransformStatement c)
+    abstract TransformForIn : Variable:Id * Object:Expression * Body:Statement -> VOption<Statement>
+    override this.TransformForIn (a, b, c) =
+        match this.TransformId a, this.TransformExpression b, this.TransformStatement c with
+        | VNone, VNone, VNone -> VNone
+        | tra, trb, trc -> ForIn (VOption.defaultValue a tra, VOption.defaultValue b trb, VOption.defaultValue c trc) |> VSome
+    member this.TransformForIn' (a, b, c) = match this.TransformForIn (a, b, c) with VSome x -> x | VNone -> ForIn (a, b, c)
     /// JavaScript 'switch' expression
-    abstract TransformSwitch : Expression:Expression * Cases:list<option<Expression> * Statement> -> Statement
-    override this.TransformSwitch (a, b) = Switch (this.TransformExpression a, List.map (fun (a, b) -> Option.map this.TransformExpression a, this.TransformStatement b) b)
+    abstract TransformSwitch : Expression:Expression * Cases:list<option<Expression> * Statement> -> VOption<Statement>
+    override this.TransformSwitch (a, b) =
+        match this.TransformExpression a, VOption.bindList (VOption.bindPair this.TransformExpressionOption this.TransformStatement) b with
+        | VNone, VNone -> VNone
+        | tra, trb -> Switch (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformSwitch' (a, b) = match this.TransformSwitch (a, b) with VSome x -> x | VNone -> Switch (a, b)
     /// 'if' statement
-    abstract TransformIf : Condition:Expression * ThenStatement:Statement * ElseStatement:Statement -> Statement
-    override this.TransformIf (a, b, c) = If (this.TransformExpression a, this.TransformStatement b, this.TransformStatement c)
+    abstract TransformIf : Condition:Expression * ThenStatement:Statement * ElseStatement:Statement -> VOption<Statement>
+    override this.TransformIf (a, b, c) =
+        match this.TransformExpression a, this.TransformStatement b, this.TransformStatement c with
+        | VNone, VNone, VNone -> VNone
+        | tra, trb, trc -> If (VOption.defaultValue a tra, VOption.defaultValue b trb, VOption.defaultValue c trc) |> VSome
+    member this.TransformIf' (a, b, c) = match this.TransformIf (a, b, c) with VSome x -> x | VNone -> If (a, b, c)
     /// 'throw' statement
-    abstract TransformThrow : Expression:Expression -> Statement
-    override this.TransformThrow a = Throw (this.TransformExpression a)
+    abstract TransformThrow : Expression:Expression -> VOption<Statement>
+    override this.TransformThrow a =
+        match this.TransformExpression a with
+        | VNone -> VNone
+        | tra -> Throw (VOption.defaultValue a tra) |> VSome
+    member this.TransformThrow' a = match this.TransformThrow a with VSome x -> x | VNone -> Throw a
     /// 'try..with' statement
-    abstract TransformTryWith : Body:Statement * Variable:option<Id> * CatchStatement:Statement -> Statement
-    override this.TransformTryWith (a, b, c) = TryWith (this.TransformStatement a, Option.map this.TransformId b, this.TransformStatement c)
+    abstract TransformTryWith : Body:Statement * Variable:option<Id> * CatchStatement:Statement -> VOption<Statement>
+    override this.TransformTryWith (a, b, c) =
+        match this.TransformStatement a, this.TransformIdOption b, this.TransformStatement c with
+        | VNone, VNone, VNone -> VNone
+        | tra, trb, trc -> TryWith (VOption.defaultValue a tra, VOption.defaultValue b trb, VOption.defaultValue c trc) |> VSome
+    member this.TransformTryWith' (a, b, c) = match this.TransformTryWith (a, b, c) with VSome x -> x | VNone -> TryWith (a, b, c)
     /// 'try..finally' statement
-    abstract TransformTryFinally : Body:Statement * FinallyStatement:Statement -> Statement
-    override this.TransformTryFinally (a, b) = TryFinally (this.TransformStatement a, this.TransformStatement b)
+    abstract TransformTryFinally : Body:Statement * FinallyStatement:Statement -> VOption<Statement>
+    override this.TransformTryFinally (a, b) =
+        match this.TransformStatement a, this.TransformStatement b with
+        | VNone, VNone -> VNone
+        | tra, trb -> TryFinally (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformTryFinally' (a, b) = match this.TransformTryFinally (a, b) with VSome x -> x | VNone -> TryFinally (a, b)
     /// Statement with a label
-    abstract TransformLabeled : Label:Id * Statement:Statement -> Statement
-    override this.TransformLabeled (a, b) = Labeled (this.TransformId a, this.TransformStatement b)
+    abstract TransformLabeled : Label:Id * Statement:Statement -> VOption<Statement>
+    override this.TransformLabeled (a, b) =
+        match this.TransformId a, this.TransformStatement b with
+        | VNone, VNone -> VNone
+        | tra, trb -> Labeled (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformLabeled' (a, b) = match this.TransformLabeled (a, b) with VSome x -> x | VNone -> Labeled (a, b)
     /// Original source location for a statement
-    abstract TransformStatementSourcePos : Range:SourcePos * Statement:Statement -> Statement
+    abstract TransformStatementSourcePos : Range:SourcePos * Statement:Statement -> VOption<Statement>
     override this.TransformStatementSourcePos (a, b) =
         match this.TransformStatement b with
-        | StatementSourcePos (_, bt) | bt -> StatementSourcePos (a, bt)
+        | VNone -> VNone
+        | VSome (StatementSourcePos (_, bt) | bt) -> StatementSourcePos (a, bt) |> VSome
     /// Temporary - C# 'goto' statement
-    abstract TransformGoto : Label:Id -> Statement
-    override this.TransformGoto a = Goto (this.TransformId a)
+    abstract TransformGoto : Label:Id -> VOption<Statement>
+    override this.TransformGoto a =
+        match this.TransformId a with
+        | VNone -> VNone
+        | tra -> Goto (VOption.defaultValue a tra) |> VSome
+    member this.TransformGoto' a = match this.TransformGoto a with VSome x -> x | VNone -> Goto a
     /// Temporary - go to next state in state-machine for iterators, async methods, or methods containing gotos
-    abstract TransformContinuation : Label:Id * Expression:Expression -> Statement
-    override this.TransformContinuation (a, b) = Continuation (this.TransformId a, this.TransformExpression b)
+    abstract TransformContinuation : Label:Id * Expression:Expression -> VOption<Statement>
+    override this.TransformContinuation (a, b) =
+        match this.TransformId a, this.TransformExpression b with
+        | VNone, VNone -> VNone
+        | tra, trb -> Continuation (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformContinuation' (a, b) = match this.TransformContinuation (a, b) with VSome x -> x | VNone -> Continuation (a, b)
     /// Temporary - C# 'yield return' statement
-    abstract TransformYield : Value:option<Expression> -> Statement
-    override this.TransformYield a = Yield (Option.map this.TransformExpression a)
+    abstract TransformYield : Value:option<Expression> -> VOption<Statement>
+    override this.TransformYield a =
+        match this.TransformExpressionOption a with
+        | VNone -> VNone
+        | tra -> Yield (VOption.defaultValue a tra) |> VSome
+    member this.TransformYield' a = match this.TransformYield a with VSome x -> x | VNone -> Yield a
     /// Temporary - C# 'switch' statement
-    abstract TransformCSharpSwitch : Expression:Expression * Cases:list<list<option<Expression>> * Statement> -> Statement
-    override this.TransformCSharpSwitch (a, b) = CSharpSwitch (this.TransformExpression a, List.map (fun (a, b) -> List.map (Option.map this.TransformExpression) a, this.TransformStatement b) b)
+    abstract TransformCSharpSwitch : Expression:Expression * Cases:list<list<option<Expression>> * Statement> -> VOption<Statement>
+    override this.TransformCSharpSwitch (a, b) =
+        match this.TransformExpression a, VOption.bindList (VOption.bindPair (VOption.bindList this.TransformExpressionOption) this.TransformStatement) b with
+        | VNone, VNone -> VNone
+        | tra, trb -> CSharpSwitch (VOption.defaultValue a tra, VOption.defaultValue b trb) |> VSome
+    member this.TransformCSharpSwitch' (a, b) = match this.TransformCSharpSwitch (a, b) with VSome x -> x | VNone -> CSharpSwitch (a, b)
     /// Temporary - C# 'goto case' statement
-    abstract TransformGotoCase : CaseExpression:option<Expression> -> Statement
-    override this.TransformGotoCase a = GotoCase (Option.map this.TransformExpression a)
+    abstract TransformGotoCase : CaseExpression:option<Expression> -> VOption<Statement>
+    override this.TransformGotoCase a =
+        match this.TransformExpressionOption a with
+        | VNone -> VNone
+        | tra -> GotoCase (VOption.defaultValue a tra) |> VSome
+    member this.TransformGotoCase' a = match this.TransformGotoCase a with VSome x -> x | VNone -> GotoCase a
     /// .NET - F# tail call position
-    abstract TransformDoNotReturn : unit -> Statement
-    override this.TransformDoNotReturn () = DoNotReturn 
-    abstract TransformExpression : Expression -> Expression
+    abstract TransformDoNotReturn : unit -> VOption<Statement>
+    override this.TransformDoNotReturn () =
+        VNone
+    member this.TransformDoNotReturn' () = match this.TransformDoNotReturn () with VSome x -> x | VNone -> DoNotReturn 
+    abstract TransformExpression : Expression -> VOption<Expression>
     override this.TransformExpression x =
         match x with
         | Undefined  -> this.TransformUndefined ()
@@ -543,7 +831,11 @@ type Transformer() =
         | GlobalAccess a -> this.TransformGlobalAccess a
         | New (a, b) -> this.TransformNew (a, b)
         | Hole a -> this.TransformHole a
-    abstract TransformStatement : Statement -> Statement
+    member this.TransformExpression' e = this.TransformExpression(e).Or(e)
+    member this.TransformExpressionOption e = VOption.bindOption this.TransformExpression e
+    member this.TransformExpressionList e = VOption.bindList this.TransformExpression e
+    member this.TransformExpressionList' e = VOption.bindList' this.TransformExpression e
+    abstract TransformStatement : Statement -> VOption<Statement>
     override this.TransformStatement x =
         match x with
         | Empty  -> this.TransformEmpty ()
@@ -571,9 +863,17 @@ type Transformer() =
         | CSharpSwitch (a, b) -> this.TransformCSharpSwitch (a, b)
         | GotoCase a -> this.TransformGotoCase a
         | DoNotReturn  -> this.TransformDoNotReturn ()
+    member this.TransformStatement' e = this.TransformStatement(e).Or(e)
+    member this.TransformStatementOption e = VOption.bindOption this.TransformStatement e
+    member this.TransformStatementList e = VOption.bindList this.TransformStatement e
+    member this.TransformStatementList' e = VOption.bindList' this.TransformStatement e
     /// Identifier for variable or label
-    abstract TransformId : Id -> Id
-    override this.TransformId x = x
+    abstract TransformId : Id -> VOption<Id>
+    override this.TransformId x = VNone
+    member this.TransformId' x = this.TransformId(x).Or(x)
+    member this.TransformIdOption x = VOption.bindOption this.TransformId x
+    member this.TransformIdList x = VOption.bindList this.TransformId x
+    member this.TransformIdList' x = VOption.bindList' this.TransformId x
 /// Base class for code visitors.
 /// Provides virtual methods for visiting each AST case separately.
 type Visitor() =
@@ -1087,7 +1387,7 @@ module Debug =
 type StatementTransformer() =
     inherit Transformer()
 
-    override this.TransformExpression(a) = a
+    override this.TransformExpression(a) = VNone
 
 /// A visitor base class that skips expression forms
 type StatementVisitor() =

@@ -452,7 +452,7 @@ type CountVarOccurence(v) =
 type SubstituteVar(v, e) =
     inherit Transformer()
 
-    override this.TransformVar(a) = if a = v then e else Var a
+    override this.TransformVar(a) = if a = v then VSome e else VNone
 
 /// Substitutes every access to specific variables to an expression,
 /// as described by the input dictionary.
@@ -461,8 +461,8 @@ type SubstituteVars(sub : System.Collections.Generic.IDictionary<Id, Expression>
 
     override this.TransformVar(a) = 
         match sub.TryGetValue(a) with
-        | true, e -> e
-        | _ -> Var a 
+        | true, e -> VSome e
+        | _ -> VNone
       
 type ContinueTransformer(e) =
     inherit StatementTransformer()
@@ -472,15 +472,16 @@ type ContinueTransformer(e) =
             ExprStatement e
             Continue a
         ]
+        |> VSome
 
 type RemoveSourcePositions() =
     inherit Transformer()
 
     override this.TransformExprSourcePos(_, e) =
-        this.TransformExpression e
+        this.TransformExpression' e |> VSome
 
     override this.TransformStatementSourcePos(_, s) =
-        this.TransformStatement s
+        this.TransformStatement' s |> VSome
 
 let removeSourcePos = RemoveSourcePositions()
 
@@ -493,6 +494,7 @@ type Substitution(args, ?thisObj) =
 
     override this.TransformHole i = 
         if i <= args.Length - 1 then args.[i] else Undefined
+        |> VSome
 
     override this.TransformFunction(args, body) =
         let res = base.TransformFunction(args, body)
@@ -505,6 +507,7 @@ type Substitution(args, ?thisObj) =
             let n = i.Clone()
             refresh.Add(i, n)
             n
+        |> VSome
    
 type FixThisScope() =
     inherit Transformer()
@@ -522,24 +525,29 @@ type FixThisScope() =
         scope <- scope + 1
         let used = ref false
         thisArgs.Add(thisArg, (scope, used))
-        let trBody = this.TransformStatement body
+        let trBody = this.TransformStatement' body
         scope <- scope - 1
         if !used then
             Function(args, CombineStatements [ VarDeclaration(thisArg, This); trBody ])
         else
             Function(args, trBody)
+        |> VSome
     
     member this.Fix(expr) =
         let b = this.TransformExpression(expr)
         match thisVar with
-        | Some t -> Let (t, This, b)
+        | Some t -> Let (t, This, b.Or expr) |> VSome
         | _ -> b
+
+    member this.Fix'(expr: Expression) = this.Fix(expr).Or(expr)
 
     member this.Fix(statement) =
         let b = this.TransformStatement(statement)
         match thisVar with
-        | Some t -> CombineStatements [ VarDeclaration(t, This); b ]
+        | Some t -> CombineStatements [ VarDeclaration(t, This); b.Or statement ] |> VSome
         | _ -> b
+
+    member this.Fix'(st: Statement) = this.Fix(st).Or(st)
                 
     override this.TransformThis () =
         if scope > 0 then
@@ -549,26 +557,27 @@ type FixThisScope() =
                 let t = Id.New ("$this", mut = false)
                 thisVar <- Some t
                 Var t
-        else This
+            |> VSome
+        else VNone
 
     override this.TransformVar v =
         match thisArgs.TryFind v with
         | Some (funcScope, used) ->
             if scope > funcScope then
                 used := true
-                Var v
-            else This
-        | _ -> Var v
+                VNone
+            else VSome This
+        | _ -> VNone
 
 type ReplaceThisWithVar(v) =
     inherit Transformer()
 
-    override this.TransformThis () = Var v
+    override this.TransformThis () = Var v |> VSome
     override this.TransformBase () = failwith "Base call is not allowed inside inlined member"
 
 let makeExprInline (vars: Id list) expr =
     if varEvalOrder vars expr then
-        SubstituteVars(vars |> Seq.mapi (fun i a -> a, Hole i) |> dict).TransformExpression(expr)
+        SubstituteVars(vars |> Seq.mapi (fun i a -> a, Hole i) |> dict).TransformExpression'(expr)
     else
         List.foldBack (fun (v, h) body ->
             Let (v, h, body)    
@@ -881,6 +890,7 @@ type Refresher() =
             let n = i.Clone()
             refresh.Add(i, n)
             n
+        |> VSome
 
 let refreshAllIds (i: Info) =
     let r = Refresher()
@@ -890,7 +900,7 @@ let refreshAllIds (i: Info) =
         | Inline
         | NotCompiledInline -> i, p, e
         | Macro (_, _, Some f) -> refreshNotInline (f, p, e)
-        | _ -> i, p, r.TransformExpression e
+        | _ -> i, p, r.TransformExpression' e
 
     { i with
         Classes =
@@ -899,11 +909,11 @@ let refreshAllIds (i: Info) =
                     Constructors = 
                         c.Constructors |> Dict.map refreshNotInline
                     StaticConstructor = 
-                        c.StaticConstructor |> Option.map (fun (x, b) -> x, r.TransformExpression b) 
+                        c.StaticConstructor |> Option.map (fun (x, b) -> x, r.TransformExpression' b) 
                     Methods = 
                         c.Methods |> Dict.map refreshNotInline
                     Implementations = 
-                        c.Implementations |> Dict.map (fun (x, b) -> x, r.TransformExpression b) 
+                        c.Implementations |> Dict.map (fun (x, b) -> x, r.TransformExpression' b)
                 }
             )
     }
@@ -956,10 +966,10 @@ let removeSourcePositionFromMetadata (meta: Info) =
         Classes = 
             meta.Classes |> Dict.map (fun c ->
                 { c with 
-                    Constructors = c.Constructors |> Dict.map (fun (i, p, e) -> i, p, removeSourcePos.TransformExpression e)    
-                    StaticConstructor = c.StaticConstructor |> Option.map (fun (a, e) -> a, removeSourcePos.TransformExpression e)
-                    Methods = c.Methods |> Dict.map (fun (i, p, e) -> i, p, removeSourcePos.TransformExpression e)
-                    Implementations = c.Implementations |> Dict.map (fun (i, e) -> i, removeSourcePos.TransformExpression e)
+                    Constructors = c.Constructors |> Dict.map (fun (i, p, e) -> i, p, removeSourcePos.TransformExpression' e)
+                    StaticConstructor = c.StaticConstructor |> Option.map (fun (a, e) -> a, removeSourcePos.TransformExpression' e)
+                    Methods = c.Methods |> Dict.map (fun (i, p, e) -> i, p, removeSourcePos.TransformExpression' e)
+                    Implementations = c.Implementations |> Dict.map (fun (i, e) -> i, removeSourcePos.TransformExpression' e)
                 }
             )
     }
@@ -985,14 +995,16 @@ type TransformSourcePositions(asmName) =
     override this.TransformExprSourcePos(p, e) =
         ExprSourcePos (
             { p with FileName = trFileName p.FileName },
-            this.TransformExpression e
+            this.TransformExpression' e
         )
+        |> VSome
 
     override this.TransformStatementSourcePos(p, s) =
         StatementSourcePos (
             { p with FileName = trFileName p.FileName },
-            this.TransformStatement s
+            this.TransformStatement' s
         )
+        |> VSome
 
 let transformAllSourcePositionsInMetadata asmName (meta: Info) =
     let tr = TransformSourcePositions(asmName)
@@ -1000,10 +1012,10 @@ let transformAllSourcePositionsInMetadata asmName (meta: Info) =
         Classes = 
             meta.Classes |> Dict.map (fun c ->
                 { c with 
-                    Constructors = c.Constructors |> Dict.map (fun (i, p, e) -> i, p, tr.TransformExpression e)    
-                    StaticConstructor = c.StaticConstructor |> Option.map (fun (a, e) -> a, tr.TransformExpression e)
-                    Methods = c.Methods |> Dict.map (fun (i, p, e) -> i, p, tr.TransformExpression e)
-                    Implementations = c.Implementations |> Dict.map (fun (i, e) -> i, tr.TransformExpression e)
+                    Constructors = c.Constructors |> Dict.map (fun (i, p, e) -> i, p, tr.TransformExpression' e)    
+                    StaticConstructor = c.StaticConstructor |> Option.map (fun (a, e) -> a, tr.TransformExpression' e)
+                    Methods = c.Methods |> Dict.map (fun (i, p, e) -> i, p, tr.TransformExpression' e)
+                    Implementations = c.Implementations |> Dict.map (fun (i, e) -> i, tr.TransformExpression' e)
                 }
             )
     },
@@ -1020,23 +1032,23 @@ type Capturing(?var) =
     override this.TransformNewVar(var, value) =
         if scope = 0 then
             defined.Add var |> ignore
-        NewVar(var, this.TransformExpression value)
+        NewVar(var, this.TransformExpression' value) |> VSome
 
     override this.TransformVarDeclaration(var, value) =
         if scope = 0 then
             defined.Add var |> ignore
-        VarDeclaration(var, this.TransformExpression value)
+        VarDeclaration(var, this.TransformExpression' value) |> VSome
 
     override this.TransformLet(var, value, body) =
         if scope = 0 then
             defined.Add var |> ignore
-        Let(var, this.TransformExpression value, this.TransformExpression body)
+        Let(var, this.TransformExpression' value, this.TransformExpression' body) |> VSome
 
     override this.TransformLetRec(defs, body) = 
         if scope = 0 then
             for var, _ in defs do
                 defined.Add var |> ignore
-        LetRec (defs |> List.map (fun (a, b) -> a, this.TransformExpression b), body |> this.TransformExpression)
+        LetRec (defs |> List.map (fun (a, b) -> a, this.TransformExpression' b), body |> this.TransformExpression') |> VSome
     
     override this.TransformId i =
         if scope > 0 then
@@ -1053,21 +1065,27 @@ type Capturing(?var) =
                 if defined.Contains i then 
                     capture <- true
                 i
-        else i
+            |> VSome
+        else VNone
 
     override this.TransformFunction (args, body) =
         scope <- scope + 1
-        let res = Function (args, this.TransformStatement body)
+        let res = Function (args, this.TransformStatement' body)
         scope <- scope - 1
-        res
+        res |> VSome
 
     member this.CaptureValueIfNeeded expr =
-        let res = this.TransformExpression expr  
+        let trExpr = this.TransformExpression expr
         if capture then
+            let res = trExpr.Or expr
             match captVal with
             | None -> Application (Function ([], Return res), [], NonPure, None)
-            | Some c -> Application (Function ([c], Return res), [Var var.Value], NonPure, None)        
-        else expr
+            | Some c -> Application (Function ([c], Return res), [Var var.Value], NonPure, None)
+            |> VSome
+        else trExpr
+
+    member this.CaptureValueIfNeeded' expr =
+        this.CaptureValueIfNeeded(expr).Or(expr)
 
 type NeedsScoping() =
     inherit Visitor()
@@ -1142,16 +1160,16 @@ type TransformerWithSourcePos(comp: Metadata.ICompilation) =
     override this.TransformExprSourcePos (pos, expr) =
         let p = currentSourcePos 
         currentSourcePos <- Some pos
-        let res = this.TransformExpression expr
+        let res = this.TransformExpression' expr
         currentSourcePos <- p
-        ExprSourcePos(pos, res)
+        ExprSourcePos(pos, res) |> VSome
 
     override this.TransformStatementSourcePos (pos, statement) =
         let p = currentSourcePos 
         currentSourcePos <- Some pos
-        let res = this.TransformStatement statement
+        let res = this.TransformStatement' statement
         currentSourcePos <- p
-        StatementSourcePos(pos, res)
+        StatementSourcePos(pos, res) |> VSome
 
 open IgnoreSourcePos
 
@@ -1182,10 +1200,10 @@ type BottomUpTransformer(tr) =
     inherit Transformer()
 
     override this.TransformExpression(e) =
-        base.TransformExpression(e) |> tr
+        base.TransformExpression(e).Or(e) |> tr |> VSome
 
 let BottomUp tr expr =
-    BottomUpTransformer(tr).TransformExpression(expr)  
+    BottomUpTransformer(tr).TransformExpression'(expr)
 
 let callArraySlice =
     (Global ["Array"]).[Value (String "prototype")].[Value (String "slice")].[Value (String "call")]   
@@ -1239,7 +1257,7 @@ let (|TupledLambda|_|) expr =
         let tupledArg, b =
             match b with
             | Let (newTA, Var t, b) when t = tupledArg -> 
-                newTA, SubstituteVar(tupledArg, Var newTA).TransformExpression b
+                newTA, SubstituteVar(tupledArg, Var newTA).TransformExpression' b
             | _ -> tupledArg, b
         let rec loop acc = function
             | Let (v, ItemGet(Var t, Value (Int i), _), body) when t = tupledArg ->
@@ -1346,18 +1364,19 @@ type OptimizeLocalTupledFunc(var, tupling) =
     override this.TransformVar(v) =
         if v = var then
             let t = Id.New(mut = false)
-            Lambda([t], Application(Var v, List.init tupling (fun i -> (Var t).[Value (Int i)]), NonPure, Some tupling))
-        else Var v  
+            Lambda([t], Application(Var v, List.init tupling (fun i -> (Var t).[Value (Int i)]), NonPure, Some tupling)) |> VSome
+        else VNone
 
     override this.TransformApplication(func, args, isPure, length) =
         match func with
         | I.Var v when v = var ->                    
             match args with
             | [ I.NewArray ts ] when ts.Length = tupling ->
-                Application (func, ts |> List.map this.TransformExpression, isPure, Some tupling)
+                Application (func, ts |> List.map this.TransformExpression', isPure, Some tupling)
             | [ t ] ->
-                Application((Var v).[Value (String "apply")], [ Value Null; this.TransformExpression t ], isPure, None)               
+                Application((Var v).[Value (String "apply")], [ Value Null; this.TransformExpression' t ], isPure, None)               
             | _ -> failwith "unexpected tupled FSharpFunc applied with multiple arguments"
+            |> VSome
         | _ -> base.TransformApplication(func, args, isPure, length)
 
 let curriedApplication func args =
@@ -1376,16 +1395,16 @@ type OptimizeLocalCurriedFunc(var, currying) =
     override this.TransformVar(v) =
         if v = var then
             let ids = List.init currying (fun _ -> Id.New(mut = false))
-            CurriedLambda(ids, Application(Var v, ids |> List.map Var, NonPure, Some currying))    
-        else Var v  
+            CurriedLambda(ids, Application(Var v, ids |> List.map Var, NonPure, Some currying)) |> VSome
+        else VNone
 
     override this.TransformCurriedApplication(func, args) =
         match func with
         | Var v when v = var ->
             if args.Length >= currying then
                 let cargs, moreArgs = args |> List.splitAt currying
-                let f = Application(func, cargs |> List.map this.TransformExpression, NonPure, Some currying)  
-                curriedApplication f (moreArgs |> List.map this.TransformExpression)
+                let f = Application(func, cargs |> List.map this.TransformExpression', NonPure, Some currying)  
+                curriedApplication f (moreArgs |> List.map this.TransformExpression') |> VSome
             else
                 base.TransformCurriedApplication(func, args)             
         | _ -> base.TransformCurriedApplication(func, args)

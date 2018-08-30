@@ -258,7 +258,7 @@ type AddCapturing(vars : seq<Id>) =
     override this.TransformId i =
         if scope > 0 && defined.Contains i then 
             captured.Add i |> ignore
-        i
+        VNone
 
     override this.TransformFunction(args, body) =
         scope <- scope + 1
@@ -270,8 +270,9 @@ type AddCapturing(vars : seq<Id>) =
                     let cVars = captured |> List.ofSeq
                     let cArgs = cVars |> List.map (fun v -> Id.New(?name = v.Name, mut = false))
                     Application(
-                        Function(cArgs, Return (ReplaceIds(Seq.zip cVars cArgs |> dict).TransformExpression f)), 
+                        Function(cArgs, Return (ReplaceIds(Seq.zip cVars cArgs |> dict).TransformExpression' (f.Or(Function(args, body))))), 
                         cVars |> List.map Var, NonPure, None) 
+                    |> VSome
                 else f
             else
                 base.TransformFunction(args, body)
@@ -324,9 +325,9 @@ type TailCallTransformer(env) =
                 for a in copiedArgs -> VarDeclaration(a, Undefined)
                 yield b  
             ]
-        |> AddCapturing(args).TransformStatement
+        |> AddCapturing(args).TransformStatement'
 
-    member this.Recurse(fArgs, origArgs: list<_>, args: list<_>, index) =
+    member this.Recurse(fArgs: seq<Id>, origArgs: list<_>, args: list<_>, index) =
         Sequential [
             // if recurring with multiple arguments,
             // current values sometimes need copying
@@ -340,7 +341,7 @@ type TailCallTransformer(env) =
                         | ar ->
                             let needsCopy =
                                 args |> Seq.skip (i + 1) |> Seq.exists (fun b ->
-                                    containsMappedVar this.TransformId a b
+                                    containsMappedVar this.TransformId' a b
                                 )                       
                             if needsCopy then 
                                 nowCopying.Add a |> ignore
@@ -357,12 +358,12 @@ type TailCallTransformer(env) =
                     yield VarSet(iv, Value (Int i))  
                 | _ -> ()
                 for x, v in recArgs do
-                    yield VarSet(x, this.TransformExpression v)
+                    yield VarSet(x, this.TransformExpression' v)
                 copying.ExceptWith(nowCopying)
                 yield StatementExpr (DoNotReturn, None)
             else
                 for x, v in Seq.zip fArgs args do
-                    yield VarSet(x, this.TransformExpression v)
+                    yield VarSet(x, this.TransformExpression' v)
                 match index with
                 | Some (iv, i) when currentIndex <> Some i ->
                     yield VarSet(iv, Value (Int i))  
@@ -374,7 +375,7 @@ type TailCallTransformer(env) =
         match f with
         | I.Var f when transforming.ContainsKey f ->
             let fArgs, origArgs, index = transforming.[f]
-            this.Recurse(fArgs, origArgs, args, index)
+            this.Recurse(fArgs, origArgs, args, index) |> VSome
         | _ ->
             base.TransformApplication(f, args, p, l)
 
@@ -391,8 +392,10 @@ type TailCallTransformer(env) =
             | true, j -> j
             | _ -> i
         if copying.Contains j then
-            argCopies.[j]
-        else j
+            VSome argCopies.[j]
+        elif i <> j then
+            VSome j
+        else VNone
 
     override this.TransformLetRec(bindings, body) =
         // optimize tupled and curried
@@ -407,15 +410,15 @@ type TailCallTransformer(env) =
                 let tr = OptimizeLocalCurriedFunc(var, List.length fArgs)
                 for bj = 0 to bindings.Length - 1 do
                     let v, c = bindings.[bj]                              
-                    bindings.[bj] <- v, tr.TransformExpression(c)   
-                body <- tr.TransformExpression(body)    
+                    bindings.[bj] <- v, tr.TransformExpression'(c)   
+                body <- tr.TransformExpression'(body)    
             | TupledLambda(fArgs, fBody, isReturn) ->
                 bindings.[bi] <- var, Function(fArgs, if isReturn then Return fBody else ExprStatement fBody) 
                 let tr = OptimizeLocalTupledFunc(var, List.length fArgs)
                 for bj = 0 to bindings.Length - 1 do
                     let v, c = bindings.[bj]
-                    bindings.[bj] <- v, tr.TransformExpression(c)   
-                body <- tr.TransformExpression(body)    
+                    bindings.[bj] <- v, tr.TransformExpression'(c)   
+                body <- tr.TransformExpression'(body)    
             | _ -> ()
         // optimize tail calls
         let matchedBindings = ResizeArray() 
@@ -446,7 +449,7 @@ type TailCallTransformer(env) =
                     transforming.Add(var, (args, args, None))
                     let trFBody = 
                         While (Value (Bool true), 
-                            Return (this.TransformExpression(fbody)))             
+                            Return (this.TransformExpression'(fbody)))             
                         |> withCopiedArgs args
                     trBindings.Add(var, Function(args, trFBody))
                     transforming.Remove var |> ignore
@@ -454,9 +457,10 @@ type TailCallTransformer(env) =
                     trBindings.Add(var, value)
             match List.ofSeq trBindings with
             | [ var, value ] ->
-                Let(var, value, base.TransformExpression body) 
+                Let(var, value, this.TransformExpression' body)
             | trBindings ->
-                LetRec(trBindings, base.TransformExpression body) 
+                LetRec(trBindings, this.TransformExpression' body)
+            |> VSome
         | _ ->
             let indexVar = Id.New "recI"
             let recFunc = Id.New("recF", mut = false)
@@ -478,7 +482,7 @@ type TailCallTransformer(env) =
                 | Choice1Of2 (args, fbody) ->
                     let ci = currentIndex
                     currentIndex <- Some i
-                    let trFBody = this.TransformExpression(fbody)    
+                    let trFBody = this.TransformExpression'(fbody)    
                     currentIndex <- ci
                     trBodies.Add(Some (Value (Int i)), Block [ Return trFBody; Break None; ] )
                     let recArgs = Value (Int i) :: List.map Var args
@@ -499,7 +503,7 @@ type TailCallTransformer(env) =
                         Switch (Var indexVar, List.ofSeq trBodies))   
                     |> withCopiedArgs newArgs   
                 )    
-            LetRec(mainFunc :: List.ofSeq trBindings, base.TransformExpression body) 
+            LetRec(mainFunc :: List.ofSeq trBindings, this.TransformExpression' body) |> VSome
 
     override this.TransformFunction(args, body) =
         let isTailRecMethodFunc =
@@ -519,9 +523,10 @@ type TailCallTransformer(env) =
                 )
             Function(args,
                 While (Value (Bool true), 
-                    Return (this.TransformExpression(b)))       
+                    Return (this.TransformExpression'(b)))
                 |> withCopiedArgs args
-            )             
+            )
+            |> VSome
         | _ ->
             base.TransformFunction(args, body)
 
@@ -529,7 +534,7 @@ type TailCallTransformer(env) =
         match env.CurrentMethod, selfCallArgs with
         | Some (ct, cm), Some fArgs
             when td.Entity = ct && meth.Entity = cm ->
-                this.Recurse(fArgs, fArgs, args, None)
+                this.Recurse(fArgs, fArgs, args, None) |> VSome
         | _ ->
             base.TransformCall(obj, td, meth, args)       
 
@@ -537,3 +542,7 @@ let optimize methOpt inlines expr =
     let env = Environment.New(methOpt, inlines) 
     TailCallAnalyzer(env).VisitExpression(expr)  
     TailCallTransformer(env).TransformExpression(expr)
+
+let optimize' methOpt inlines expr =
+    optimize methOpt inlines expr
+    |> VOption.defaultValue expr

@@ -212,7 +212,7 @@ type private IsImmutable(v) =
 let makePossiblyImmutable expr (v: Id) =
     if IsImmutable(v).Check(expr) then 
         let vi = Id.New(?name = v.Name, mut = false)
-        ReplaceId(v, vi).TransformExpression(expr)
+        ReplaceId(v, vi).TransformExpression'(expr)
     else expr         
 
 let checkNotMutating (env: Environment) a f =
@@ -511,12 +511,12 @@ type InlinedStatementsTransformer() =
                 rv
             | Some rv -> rv
         
-        VarSetStatement(rv, expr)
+        VarSetStatement(rv, expr) |> VSome
 
-    override this.TransformFuncDeclaration(a, b, c)  = FuncDeclaration(a, b, c) 
+    override this.TransformFuncDeclaration(a, b, c)  = VNone
     
     member this.Run(st) =
-        let res = this.TransformStatement(st)
+        let res = this.TransformStatement'(st)
         StatementExpr(res, returnVar)
                 
 let createInline ext thisArg args isPure inlineString =        

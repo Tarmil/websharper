@@ -20,6 +20,7 @@
 
 module internal WebSharper.Compiler.CSharp.Scoping
 
+open WebSharper.Core
 open WebSharper.Core.AST
 
 open System.Collections.Generic
@@ -64,12 +65,13 @@ type BlockScoping() =
     let breaks = ResizeArray() 
     let conts = ResizeArray() 
 
-    override this.TransformFunction(a, b) = Function(a, b)
+    override this.TransformFunction(a, b) = VNone
 
     override this.TransformReturn(a) =
         match a with
         | Undefined -> Return(NewArray [ i0 ])
         | _ -> Return(NewArray [ i0; a ])
+        |> VSome
 
     override this.TransformBreak(a) =
         breaks.Add a
@@ -77,12 +79,14 @@ type BlockScoping() =
         | None -> Return(NewArray [ i1 ]) 
         | Some l ->
             Return(NewArray [ i1; Value (String l.Name.Value) ])
+        |> VSome
 
     override this.TransformContinue(a) =
         conts.Add a
         match a with 
         | None -> Return(NewArray [ i2 ]) 
         | Some l -> Return(NewArray [ i2; Value (String l.Name.Value) ])
+        |> VSome
 
      member this.CloseBlock(a) =
         let res = Id.New()
@@ -134,30 +138,26 @@ type FixScoping() =
         match IgnoreStatementSourcePos a with
         | Block bs -> 
             if HasCapturedDeclarations().Check(a) then
-                BlockScoping().CloseBlock(bs)   
+                BlockScoping().CloseBlock(bs) |> VSome
                 // TODO : restore source pos info
-            else a  
-        | _ -> a
+            else VNone
+        | _ -> VNone
 
     override this.TransformFor(a, b, c, d) =
-        For (
-            a, 
-            b |> Option.map this.TransformExpression, 
-            c |> Option.map this.TransformExpression,
-            d |> this.TransformStatement |> this.TransformLoopBody
-        )
+        // TODO: there was no TransformExpression on a???
+        match this.TransformExpressionOption a, this.TransformExpressionOption b, this.TransformExpressionOption c, VOption.chain [this.TransformStatement; this.TransformLoopBody] d with
+        | VNone, VNone, VNone, VNone -> VNone
+        | trA, trB, trC, trD -> For (trA.Or a, trB.Or b, trC.Or c, trD.Or d) |> VSome
 
     override this.TransformWhile(a, b) =
-        While(
-            a |> this.TransformExpression,
-            b |> this.TransformStatement |> this.TransformLoopBody
-        )
+        match this.TransformExpression a, VOption.chain [this.TransformStatement; this.TransformLoopBody] b with
+        | VNone, VNone -> VNone
+        | trA, trB -> While (trA.Or a, trB.Or b) |> VSome
 
     override this.TransformDoWhile(a, b) =
-        DoWhile(
-            a |> this.TransformStatement |> this.TransformLoopBody,
-            b |> this.TransformExpression
-        )
+        match VOption.chain [this.TransformStatement; this.TransformLoopBody] a, this.TransformExpression b with
+        | VNone, VNone -> VNone
+        | trA, trB -> DoWhile (trA.Or a, trB.Or b) |> VSome
     
 let private fixInst = FixScoping() 
 

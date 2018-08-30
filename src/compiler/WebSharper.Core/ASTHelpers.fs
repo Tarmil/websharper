@@ -21,6 +21,8 @@
 [<AutoOpen>]
 module WebSharper.Core.AST.ASTHelpers
 
+open WebSharper.Core
+
 /// Constructs a Concrete<'T> instance
 let Generic e g =
     {
@@ -372,7 +374,7 @@ type ReplaceId(fromId, toId) =
     inherit Transformer()
     
     override this.TransformId i =
-        if i = fromId then toId else i
+        if i = fromId then VSome toId else VNone
 
 /// Change every occurence of multiple Ids
 type ReplaceIds(repl : System.Collections.Generic.IDictionary<Id, Id>) =
@@ -380,8 +382,8 @@ type ReplaceIds(repl : System.Collections.Generic.IDictionary<Id, Id>) =
     
     override this.TransformId i =
         match repl.TryGetValue i with
-        | true, j -> j
-        | _ -> i
+        | true, j -> VSome j
+        | _ -> VNone
 
 let EmbedAST<'T> (v: Expression) : FSharp.Quotations.Expr<'T> =
     FSharp.Quotations.Expr.Value(v, typeof<'T>) 

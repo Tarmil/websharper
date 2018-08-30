@@ -204,7 +204,7 @@ type Compilation(meta: Info, ?hasGraph) =
         member this.ParseJSInline(inl: string, args: Expression list): Expression = 
             let vars = args |> List.map (fun _ -> Id.New(mut = false))
             let parsed = Recognize.createInline mutableExternals None vars false inl
-            Substitution(args).TransformExpression(parsed)
+            Substitution(args).TransformExpression'(parsed)
                 
         member this.NewGenerated addr =
             let resolved = resolver.Value.StaticAddress (List.rev addr)
@@ -930,7 +930,7 @@ type Compilation(meta: Info, ?hasGraph) =
                             | Function(args, b) ->
                                 let thisVar = Id.New("$this", mut = false)
                                 Function (thisVar :: args,
-                                    ReplaceThisWithVar(thisVar).TransformStatement(b) 
+                                    ReplaceThisWithVar(thisVar).TransformStatement'(b) 
                                 )
                             | _ ->
                                 failwith "Unexpected: instance member not a function"

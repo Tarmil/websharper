@@ -475,22 +475,28 @@ let private transformClass (rcomp: CSharpCompilation) (sr: R.SymbolReader) (comp
                                     | _ -> false
                                 if isSeq && hasYield b1 then
                                     let b = 
-                                        b1 |> Continuation.addLastReturnIfNeeded (Value (Bool false))
-                                        |> Scoping.fix
-                                        |> Continuation.FreeNestedGotos().TransformStatement
-                                    let labels = Continuation.CollectLabels.Collect b
-                                    Continuation.GeneratorTransformer(labels).TransformMethodBody(b)
+                                        b1
+                                        |> VOption.chain [
+                                            Continuation.addLastReturnIfNeeded (Value (Bool false))
+                                            Scoping.fix
+                                            Continuation.FreeNestedGotos().TransformStatement
+                                        ]
+                                    let labels = Continuation.CollectLabels.Collect (b.Or b1)
+                                    Continuation.GeneratorTransformer(labels).TransformMethodBody(b.Or b1)
                                 elif m.IsAsync then
                                     let b = 
-                                        b1 |> Continuation.addLastReturnIfNeeded Undefined
-                                        |> Continuation.AwaitTransformer().TransformStatement 
-                                        |> BreakStatement
-                                        |> Scoping.fix
-                                        |> Continuation.FreeNestedGotos().TransformStatement
-                                    let labels = Continuation.CollectLabels.Collect b
-                                    Continuation.AsyncTransformer(labels, sr.ReadAsyncReturnKind meth).TransformMethodBody(b)
-                                else b1 |> Scoping.fix |> Continuation.eliminateGotos
-                            { m with Body = b2 |> FixThisScope().Fix }
+                                        b1
+                                        |> VOption.chain [
+                                            Continuation.addLastReturnIfNeeded Undefined
+                                            Continuation.AwaitTransformer().TransformStatement 
+                                            BreakStatement >> VSome
+                                            Scoping.fix
+                                            Continuation.FreeNestedGotos().TransformStatement
+                                        ]
+                                    let labels = Continuation.CollectLabels.Collect (b.Or b1)
+                                    Continuation.AsyncTransformer(labels, sr.ReadAsyncReturnKind meth).TransformMethodBody(b.Or b1)
+                                else b1 |> VOption.chain' [Scoping.fix; Continuation.eliminateGotos]
+                            { m with Body = b2 |> FixThisScope().Fix' }
                         match syntax with
                         | :? MethodDeclarationSyntax as syntax ->
                             syntax
@@ -565,7 +571,7 @@ let private transformClass (rcomp: CSharpCompilation) (sr: R.SymbolReader) (comp
                             {
                                 IsStatic = meth.IsStatic
                                 Parameters = c.Parameters
-                                Body = b |> FixThisScope().Fix
+                                Body = b |> FixThisScope().Fix'
                                 IsAsync = false
                                 ReturnType = Unchecked.defaultof<Type>
                             } : CodeReader.CSharpMethod
@@ -664,7 +670,7 @@ let private transformClass (rcomp: CSharpCompilation) (sr: R.SymbolReader) (comp
                     let thisVar = if meth.IsStatic then None else Some (Id.New "$this")
                     let b = 
                         match thisVar with
-                        | Some t -> ReplaceThisWithVar(t).TransformExpression(b)
+                        | Some t -> ReplaceThisWithVar(t).TransformExpression'(b)
                         | _ -> b
                     let allVars = Option.toList thisVar @ args
                     makeExprInline allVars (Application (b, allVars |> List.map Var, NonPure, None))

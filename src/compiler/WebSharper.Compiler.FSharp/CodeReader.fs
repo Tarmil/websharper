@@ -142,22 +142,31 @@ type FixCtorTransformer(typ, btyp, ?thisExpr) =
 
     override this.TransformSequential (es) =
         match es with
-        | h :: t -> Sequential (this.TransformExpression h :: t)
-        | _ -> Undefined
+        | h :: t ->
+            match this.TransformExpression h with
+            | VNone -> VNone
+            | VSome trH -> Sequential (trH :: t) |> VSome
+        | _ -> VSome Undefined
 
     override this.TransformLet(a, b, c) =
-        Let(a, b, this.TransformExpression c)
+        match this.TransformExpression c with
+        | VNone -> VNone
+        | VSome trC -> Let(a, b, trC) |> VSome
 
     override this.TransformConditional(a, b, c) =
-        Conditional(a, this.TransformExpression b, this.TransformExpression c)   
+        match this.TransformExpression b, this.TransformExpression c with
+        | VNone, VNone -> VNone
+        | trB, trC -> Conditional(a, trB.Or b, trC.Or c) |> VSome
         
     override this.TransformLetRec(a, b) =
-        LetRec(a, this.TransformExpression b) 
+        match this.TransformExpression b with
+        | VNone -> VNone
+        | VSome trB -> LetRec(a, trB) |> VSome
 
-    override this.TransformStatementExpr(a, b) = StatementExpr (a, b)
+    override this.TransformStatementExpr(a, b) = VNone
 
     override this.TransformCtor (t, c, a) =
-        if addedBaseCtor then Ctor (t, c, a) else
+        if addedBaseCtor then VNone else
         addedBaseCtor <- true
         let isBase = t.Entity <> typ
         let tn = typ.Value.FullName
@@ -183,9 +192,10 @@ type FixCtorTransformer(typ, btyp, ?thisExpr) =
             else
                 BaseCtor(thisExpr, t, c, a) 
         else thisExpr
+        |> VSome
 
     member this.Fix(expr) = 
-        let res = this.TransformExpression(expr)
+        let res = this.TransformExpression'(expr)
         match btyp with
         | Some b when not addedBaseCtor -> 
             Sequential [ BaseCtor(thisExpr, NonGeneric b, ConstructorInfo.Default(), []); res ]
@@ -271,8 +281,9 @@ type MatchValueTransformer(c, twoCase) =
                 Value (Int index)
         match results with
         | [] -> resVal
-        | [ capt ] -> Sequential [ VarSet (c, capt); resVal ] 
-        | _ -> Sequential [ VarSet (c, NewArray results); resVal ] 
+        | [ capt ] -> Sequential [ VarSet (c, capt); resVal ]
+        | _ -> Sequential [ VarSet (c, NewArray results); resVal ]
+        |> VSome
 
 type InlineMatchValueTransformer(cases : (Id list * Expression) list) =
     inherit Transformer()
@@ -281,7 +292,7 @@ type InlineMatchValueTransformer(cases : (Id list * Expression) list) =
 
     override this.TransformMatchSuccess(index, results) =
         let captures, body = cases.[index]    
-        body |> List.foldBack (fun (c, r) body -> Let (c, r, body)) (List.zip captures results)
+        body |> List.foldBack (fun (c, r) body -> Let (c, r, body)) (List.zip captures results) |> VSome
 
 let removeListOfArray (argType: FSharpType) (expr: Expression) =
     if isSeq (getOrigType argType) then
@@ -775,7 +786,7 @@ let rec transformExpression (env: Environment) (expr: FSharpExpr) =
         | P.NewTuple (_, items) ->
             NewArray (items |> List.map tr)              
         | P.WhileLoop (cond, body) ->
-            IgnoredStatementExpr(While(tr cond, ExprStatement (Capturing().CaptureValueIfNeeded(tr body))))
+            IgnoredStatementExpr(While(tr cond, ExprStatement (Capturing().CaptureValueIfNeeded'(tr body))))
         | P.ValueSet (var, value) ->
             if var.IsModuleValueOrMember then
                 let td = sr.ReadAndRegisterTypeDefinition env.Compilation (getDeclaringEntity var)
@@ -810,7 +821,7 @@ let rec transformExpression (env: Environment) (expr: FSharpExpr) =
                 Some (Sequential [NewVar(i, tr start); NewVar (j, tr end_)]), 
                 Some (if up then Binary(Var i, BinaryOperator.``<=``, Var j) else Binary(Var i, BinaryOperator.``>=``, Var j)), 
                 Some (if up then MutatingUnary(MutatingUnaryOperator.``()++``, Var i)  else MutatingUnary(MutatingUnaryOperator.``()--``, Var i)), 
-                ExprStatement (Capturing(i).CaptureValueIfNeeded(trBody))
+                ExprStatement (Capturing(i).CaptureValueIfNeeded'(trBody))
             ) |> IgnoredStatementExpr
         | P.TypeTest (typ, expr) ->
             TypeCheck (tr expr, sr.ReadType env.TParams typ)
@@ -915,16 +926,16 @@ let rec transformExpression (env: Environment) (expr: FSharpExpr) =
             MatchValueVisitor(okToInline).VisitExpression(trMatchVal)
 
             if okToInline |> Array.forall (fun i -> i <= 1) then
-                InlineMatchValueTransformer(trCases).TransformExpression(trMatchVal)    
+                InlineMatchValueTransformer(trCases).TransformExpression'(trMatchVal)    
             else
                 let c = newId()
-                let mv = MatchValueTransformer(c, trCases.Length = 2).TransformExpression(trMatchVal)
+                let mv = MatchValueTransformer(c, trCases.Length = 2).TransformExpression'(trMatchVal)
                 let cs = 
                     trCases |> List.map (fun (captures, body) ->
                         match captures with
                         | [] -> body
                         | [capt] ->
-                            ReplaceId(capt, c).TransformExpression(body)
+                            ReplaceId(capt, c).TransformExpression'(body)
                         | _ ->
                             body |> List.foldBack (fun (i, id) body -> 
                                 Let(id, ItemGet(Var c, Value (Int i), Pure), body)) (List.indexed captures)
@@ -1070,7 +1081,7 @@ let rec transformExpression (env: Environment) (expr: FSharpExpr) =
             let baseTyp = typ.TypeDefinition.BaseType |> Option.map (fun t -> sr.ReadAndRegisterTypeDefinition env.Compilation t.TypeDefinition) 
             Let(r, CopyCtor(td, plainObj),
                 Sequential [
-                    yield FixCtorTransformer(td, baseTyp, Var r).TransformExpression(tr expr)
+                    yield FixCtorTransformer(td, baseTyp, Var r).TransformExpression'(tr expr)
                     yield Var r
                 ]
             )

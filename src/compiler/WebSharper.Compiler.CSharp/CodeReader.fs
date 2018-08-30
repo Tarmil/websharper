@@ -79,13 +79,13 @@ type RemoveBreaksTransformer() =
 
     override this.TransformStatement s =
         match s with
-        | Break None -> Empty
+        | Break None -> VSome Empty
         | For _
         | ForIn _
         | While _
         | DoWhile _
         | Switch _ ->
-            s
+            VNone
         | _ -> base.TransformStatement s
 
 let removeBreaksTr = RemoveBreaksTransformer()
@@ -877,10 +877,10 @@ type RoslynTransformer(env: Environment) =
         let b =
             if symbol.IsAsync then
                 let b = 
-                    b |> Continuation.addLastReturnIfNeeded Undefined
-                    |> Continuation.AwaitTransformer().TransformStatement 
+                    b |> Continuation.addLastReturnIfNeeded' Undefined
+                    |> Continuation.AwaitTransformer().TransformStatement'
                     |> BreakStatement
-                    |> Continuation.FreeNestedGotos().TransformStatement
+                    |> Continuation.FreeNestedGotos().TransformStatement'
                 let labels = Continuation.CollectLabels.Collect b
                 Continuation.AsyncTransformer(labels, sr.ReadAsyncReturnKind symbol).TransformMethodBody(b)
             else
@@ -1012,7 +1012,7 @@ type RoslynTransformer(env: Environment) =
             let defaultBody =
                 match defaultSection with
                 | [] -> Empty
-                | (_, s) :: _ -> removeBreaksTr.TransformStatement s
+                | (_, s) :: _ -> removeBreaksTr.TransformStatement' s
 
             Let (sv, expression, 
                 let nestedIfs =
@@ -1025,7 +1025,7 @@ type RoslynTransformer(env: Environment) =
                                 | PatternLabel p -> p sv
                             )
                             |> List.reduce (^||)
-                        If (condition, removeBreaksTr.TransformStatement body, rest)
+                        If (condition, removeBreaksTr.TransformStatement' body, rest)
                     )
                 StatementExpr(nestedIfs, None)
             )
@@ -1843,10 +1843,10 @@ type RoslynTransformer(env: Environment) =
         let symbol = env.SemanticModel.GetSymbolInfo(x.Node).Symbol :?> IMethodSymbol
         if symbol.IsAsync then
             let b = 
-                body |> Continuation.addLastReturnIfNeeded Undefined
-                |> Continuation.AwaitTransformer().TransformStatement 
+                body |> Continuation.addLastReturnIfNeeded' Undefined
+                |> Continuation.AwaitTransformer().TransformStatement'
                 |> BreakStatement
-                |> Continuation.FreeNestedGotos().TransformStatement
+                |> Continuation.FreeNestedGotos().TransformStatement'
             let labels = Continuation.CollectLabels.Collect b
             Function([id], Continuation.AsyncTransformer(labels, sr.ReadAsyncReturnKind symbol).TransformMethodBody(b))
         else
@@ -1865,10 +1865,10 @@ type RoslynTransformer(env: Environment) =
         let body = x.Body |> this.TransformCSharpNode
         if symbol.IsAsync then
             let b = 
-                body |> Continuation.addLastReturnIfNeeded Undefined
-                |> Continuation.AwaitTransformer().TransformStatement 
+                body |> Continuation.addLastReturnIfNeeded' Undefined
+                |> Continuation.AwaitTransformer().TransformStatement'
                 |> BreakStatement
-                |> Continuation.FreeNestedGotos().TransformStatement
+                |> Continuation.FreeNestedGotos().TransformStatement'
             let labels = Continuation.CollectLabels.Collect b
             Function(ids, Continuation.AsyncTransformer(labels, sr.ReadAsyncReturnKind symbol).TransformMethodBody(b))
         else

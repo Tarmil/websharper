@@ -95,7 +95,7 @@ let packageAssembly (refMeta: M.Info) (current: M.Info) entryPoint entryPointSty
 
     let globalAccessTransformer =
         { new Transformer() with
-            override this.TransformGlobalAccess a = getOrImportAddress true a
+            override this.TransformGlobalAccess a = getOrImportAddress true a |> VSome
         }
             
     let package a expr =
@@ -218,7 +218,7 @@ let packageAssembly (refMeta: M.Info) (current: M.Info) entryPoint entryPointSty
         failwith "Missing entry point or export. Add SPAEntryPoint attribute to a static method without arguments, or JavaScriptExport on types/methods to expose them."
     | OnLoadIfExists, None -> ()
     
-    let trStatements = statements |> Seq.map globalAccessTransformer.TransformStatement |> List.ofSeq
+    let trStatements = statements |> Seq.map globalAccessTransformer.TransformStatement' |> List.ofSeq
 
     if List.isEmpty trStatements then Undefined else
         let allStatements = List.ofSeq (Seq.append declarations trStatements) 

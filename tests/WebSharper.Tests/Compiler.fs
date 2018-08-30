@@ -45,7 +45,7 @@ module Server =
         inherit Transformer()
     
         override this.TransformExpression (a) =
-            base.TransformExpression(WebSharper.Compiler.Optimizations.cleanRuntime true a)
+            base.TransformExpression(WebSharper.Compiler.Optimizations.cleanRuntime' true a)
 
     let private runtimeCleaner = RuntimeCleaner()
 
@@ -54,7 +54,7 @@ module Server =
         let res =
             if p expr then "" 
             else
-                let opt = runtimeCleaner.TransformExpression expr
+                let opt = runtimeCleaner.TransformExpression' expr
                 if opt <> expr then
                     "Not fully optimized: " + Debug.PrintExpression expr + " => " + Debug.PrintExpression opt
                 else

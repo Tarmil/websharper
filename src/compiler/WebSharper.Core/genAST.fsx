@@ -26,7 +26,6 @@ type Case =
     | Statement
     | Id
     | Object of string
-    | Empty
     static member (*) (a, b) =
         match a with
         | Tuple at -> Tuple (at @ [b])
@@ -46,7 +45,6 @@ let rec shape c =
     | Expr -> Some Expr
     | Statement -> Some Statement
     | Object _ -> None
-    | Empty -> None
 
 let rec toType c =
     match c with
@@ -60,7 +58,6 @@ let rec toType c =
     | Statement -> "Statement"
     | Id -> "Id"
     | Object o -> o
-    | Empty -> "unit"
 
 let capitalize (s: string) = s.[0 .. 0].ToUpper() + s.[1 ..]
 
@@ -83,7 +80,6 @@ let rec info c =
     | Expr -> None
     | Statement -> None
     | Id -> None
-    | Empty -> None
 
 let Literal = Object "Literal"
 let NonGenericTypeDefinition = Object "TypeDefinition"
@@ -335,16 +331,18 @@ let code =
     cprintfn "type Transformer() ="
     for t, n, c, comm in ExprAndStatementDefs do
         cprintfn "    /// %s" comm
-        cprintfn "    abstract Transform%s : %s -> %s" n (toFields c) t
+        cprintfn "    abstract Transform%s : %s -> VOption<%s>" n (toFields c) t
         match n with
         | "ExprSourcePos" ->
             cprintfn "    override this.TransformExprSourcePos (a, b) ="
             cprintfn "        match this.TransformExpression b with"
-            cprintfn "        | ExprSourcePos (_, bt) | bt -> ExprSourcePos (a, bt)"    
+            cprintfn "        | VNone -> VNone"
+            cprintfn "        | VSome (ExprSourcePos (_, bt) | bt) -> ExprSourcePos (a, bt) |> VSome"
         | "StatementSourcePos" ->
             cprintfn "    override this.TransformStatementSourcePos (a, b) ="
             cprintfn "        match this.TransformStatement b with"
-            cprintfn "        | StatementSourcePos (_, bt) | bt -> StatementSourcePos (a, bt)"    
+            cprintfn "        | VNone -> VNone"
+            cprintfn "        | VSome (StatementSourcePos (_, bt) | bt) -> StatementSourcePos (a, bt) |> VSome"
         | _ ->
         let args =
             match c with
@@ -352,35 +350,52 @@ let code =
             | [_] -> "a"
             | _ ->
                 "(" + String.concat ", " (Seq.take c.Length letters) + ")"
-        let rec tr c x =
-            match c with
-            | List Expr -> "List.map this.TransformExpression " + x
-            | Option Expr -> "Option.map this.TransformExpression " + x
-            | Expr -> "this.TransformExpression " + x 
-            | Statement -> "this.TransformStatement " + x
-            | Id -> "this.TransformId " + x
-            | Option Id -> "Option.map this.TransformId " + x
-            | List Id -> "List.map this.TransformId " + x
-            | List (Tuple [Id; Expr]) -> "List.map (fun (a, b) -> this.TransformId a, this.TransformExpression b) " + x 
-            | List Statement -> "List.map this.TransformStatement " + x
-            | List (Tuple [Object _; Expr]) -> "List.map (fun (a, b) -> a, this.TransformExpression b) " + x
-            | List (Tuple [Option Expr; Statement]) -> "List.map (fun (a, b) -> Option.map this.TransformExpression a, this.TransformStatement b) " + x 
-            | List (Tuple [List (Option Expr); Statement]) -> "List.map (fun (a, b) -> List.map (Option.map this.TransformExpression) a, this.TransformStatement b) " + x
-            | Object _ -> x
-            | List (Object _) -> x
-            | Option (Object _) -> x
-            | Empty -> ""
-            | _ -> " failwith \"no transform\""
-        let trArgs = 
+        let cargs =
             match c with
             | [] -> ""
-            | [c, _] -> "(" + tr c "a" + ")"
-            | _ ->
-                "(" + String.concat ", " (c |> Seq.mapi (fun j (a, _) -> tr a (letters.[j]))) + ")"  
-        cprintfn "    override this.Transform%s %s = %s %s" n args n trArgs
+            | _ -> args
+        let tr c x =
+            match c with
+            | Id -> Some <| "this.TransformId " + x
+            | Expr -> Some <| "this.TransformExpression " + x
+            | Statement -> Some <| "this.TransformStatement " + x
+            | Option Id -> Some <| "this.TransformIdOption " + x
+            | Option Expr -> Some <| "this.TransformExpressionOption " + x
+            | Option Statement -> Some <| "this.TransformStatementOption " + x
+            | List Id -> Some <| "this.TransformIdList " + x
+            | List Expr -> Some <| "this.TransformExpressionList " + x
+            | List Statement -> Some <| "this.TransformStatementList " + x
+            | List (Tuple [Id; Expr]) -> Some <| "VOption.bindList (VOption.bindPair this.TransformId this.TransformExpression) " + x
+            | List (Tuple [Object _; Expr]) -> Some <| "VOption.bindList (VOption.bindPair VSome this.TransformExpression) " + x
+            | List (Tuple [Option Expr; Statement]) -> Some <| "VOption.bindList (VOption.bindPair this.TransformExpressionOption this.TransformStatement) " + x
+            | List (Tuple [List (Option Expr); Statement]) -> Some <| "VOption.bindList (VOption.bindPair (VOption.bindList this.TransformExpressionOption) this.TransformStatement) " + x
+            | Object _
+            | List (Object _)
+            | Option (Object _) -> None
+            | _ -> failwithf "No transform: %A" c
+        let allTr = c |> List.mapi (fun j (a, _) -> tr a (letters.[j]) |> Option.map (fun s -> j, s))
+        cprintfn "    override this.Transform%s %s =" n args
+        if allTr |> List.forall Option.isNone then
+            cprintfn "        VNone"
+        else
+            let allTr = List.choose id allTr
+            let matchVal = allTr |> List.map (fun (_, s) -> s) |> String.concat ", "
+            let nonePat = allTr |> List.map (fun _ -> "VNone") |> String.concat ", "
+            let somePat = allTr |> List.map (fun (j, _) -> "tr" + letters.[j]) |> String.concat ", "
+            let args =
+                let args = Array.init c.Length (fun j -> letters.[j])
+                allTr |> List.iter (fun (j, _) -> args.[j] <- sprintf "VOption.defaultValue %s tr%s" args.[j] args.[j])
+                match args with
+                | [||] -> ""
+                | args -> sprintf "(%s)" (String.concat ", " args)
+            cprintfn "        match %s with" matchVal
+            cprintfn "        | %s -> VNone" nonePat
+            cprintfn "        | %s -> %s %s |> VSome" somePat n args
+
+        cprintfn "    member this.Transform%s' %s = match this.Transform%s %s with VSome x -> x | VNone -> %s %s" n args n args n cargs
 
     for t, tl in [ "Expression", ExprDefs; "Statement", StatementDefs ] do
-        cprintfn "    abstract Transform%s : %s -> %s" t t t
+        cprintfn "    abstract Transform%s : %s -> VOption<%s>" t t t
         cprintfn "    override this.Transform%s x =" t
         cprintfn "        match x with"
         for n, c, _ in tl do
@@ -397,10 +412,18 @@ let code =
                 | _ ->
                     "(" + String.concat ", " (Seq.take c.Length letters) + ")"
             cprintfn "        | %s %s -> this.Transform%s %s" n args n trArgs
+        cprintfn "    member this.Transform%s' e = this.Transform%s(e).Or(e)" t t
+        cprintfn "    member this.Transform%sOption e = VOption.bindOption this.Transform%s e" t t
+        cprintfn "    member this.Transform%sList e = VOption.bindList this.Transform%s e" t t
+        cprintfn "    member this.Transform%sList' e = VOption.bindList' this.Transform%s e" t t
 
     cprintfn "    /// Identifier for variable or label"    
-    cprintfn "    abstract TransformId : Id -> Id"
-    cprintfn "    override this.TransformId x = x"
+    cprintfn "    abstract TransformId : Id -> VOption<Id>"
+    cprintfn "    override this.TransformId x = VNone"
+    cprintfn "    member this.TransformId' x = this.TransformId(x).Or(x)"
+    cprintfn "    member this.TransformIdOption x = VOption.bindOption this.TransformId x"
+    cprintfn "    member this.TransformIdList x = VOption.bindList this.TransformId x"
+    cprintfn "    member this.TransformIdList' x = VOption.bindList' this.TransformId x"
 
     // Visitor
 
@@ -433,7 +456,6 @@ let code =
             | Object _ -> "()"
             | List (Object _) -> "()"
             | Option (Object _) -> "()"
-            | Empty -> ""
             | _ -> " failwith \"no visit\""
         let trArgs = 
             match c with
@@ -525,7 +547,6 @@ let code =
                 | Object _ -> "PrintObject " + x
                 | List (Object _) -> "\"[\" + String.concat \"; \" (List.map PrintObject " + x + ") + \"]\""
                 | Option (Object _) -> "defaultArg (Option.map PrintObject " + x + ") \"_\""
-                | Empty -> ""
                 | _ -> "TODOprinter"
             match c with
             | [ Object "SourcePos", _; Expr, _ ] ->

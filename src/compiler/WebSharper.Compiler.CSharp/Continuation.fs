@@ -20,6 +20,7 @@
 
 module internal WebSharper.Compiler.CSharp.Continuation
  
+open WebSharper.Core
 open WebSharper.Core.AST
 open WebSharper.Compiler
 
@@ -74,12 +75,13 @@ type AwaitTransformer() =
         let doneLabel = Id.New "$done"
         let exc = ItemGet(Var awaited, Value (String "exc"), NoSideEffect)
         Sequential [
-            NewVar(awaited, this.TransformExpression a)
+            NewVar(awaited, this.TransformExpression' a)
             IgnoredStatementExpr <| Continuation(doneLabel, Var awaited)
             IgnoredStatementExpr <| Labeled(doneLabel, Empty)
             IgnoredStatementExpr <| If (exc, Throw exc, Empty)
             ItemGet(Var awaited, Value (String "result"), NoSideEffect)                 
         ]
+        |> VSome
 
 type HasGotos() =
     inherit StatementVisitor()
@@ -138,7 +140,7 @@ type FreeNestedGotos(?loopStart, ?loopEnd, ?increment) =
             match init with Some i -> yield ExprStatement i | _ -> ()
             yield Labeled (forStart, Empty)
             match cond with Some c -> yield If (c, Empty, Goto forEnd) | _ -> ()    
-            yield FreeNestedGotos(forStart, forEnd, ?increment = incr).TransformStatement body
+            yield FreeNestedGotos(forStart, forEnd, ?increment = incr).TransformStatement' body
             match incr with Some i -> yield ExprStatement i | _ -> ()
             yield Goto forStart 
             yield Labeled (forEnd, Empty)
@@ -146,13 +148,13 @@ type FreeNestedGotos(?loopStart, ?loopEnd, ?increment) =
 
     override this.TransformFor(init, cond, incr, body) =
         let trBody = this.TransformStatement body
-        if HasGotos.Check trBody then
-            this.TransformFor(init, cond, incr, body, None)
-        else For(init, cond, incr, trBody)
+        if HasGotos.Check (trBody.Or body) then
+            this.TransformFor(init, cond, incr, body, None) |> VSome
+        else trBody |> VOption.map (fun trBody -> For(init, cond, incr, trBody))
 
     override this.TransformLabeled(label, body) =
         match IgnoreStatementSourcePos body with
-        | For (init, cond, incr, body) -> this.TransformFor(init, cond, incr, body, Some label)
+        | For (init, cond, incr, body) -> this.TransformFor(init, cond, incr, body, Some label) |> VSome
         | _ -> base.TransformLabeled(label, body)  
 
     override this.TransformContinue _ =
@@ -163,10 +165,11 @@ type FreeNestedGotos(?loopStart, ?loopEnd, ?increment) =
                 Goto loopStart.Value
             ]
         | _ ->
-        Goto loopStart.Value
+            Goto loopStart.Value
+        |> VSome
 
     override this.TransformBreak _ =
-        Goto loopEnd.Value
+        Goto loopEnd.Value |> VSome
 
     // TODO : current label check for while, dowhile
     override this.TransformWhile(cond, body) =
@@ -176,11 +179,12 @@ type FreeNestedGotos(?loopStart, ?loopEnd, ?increment) =
             Block [
                 Labeled (whileStart, Empty)
                 If (cond, Empty, Goto whileEnd)
-                FreeNestedGotos(whileStart, whileEnd).TransformStatement body
+                FreeNestedGotos(whileStart, whileEnd).TransformStatement' body
                 Goto whileStart
                 Labeled(whileEnd, Empty)
             ]
-        else While(cond, body)
+            |> VSome
+        else VNone
 
     override this.TransformDoWhile(body, cond) =
         if HasGotos.Check body then
@@ -188,10 +192,11 @@ type FreeNestedGotos(?loopStart, ?loopEnd, ?increment) =
             let whileEnd = Id.New "$enddowile"
             Block [
                 Labeled (whileStart, Empty)
-                FreeNestedGotos(whileStart, whileEnd).TransformStatement body
+                FreeNestedGotos(whileStart, whileEnd).TransformStatement' body
                 If (cond, Goto whileStart, Empty)
-            ] 
-        else DoWhile(body, cond)
+            ]
+            |> VSome
+        else VNone
 
     override this.TransformIf(cond, sThen, sElse) =
         if HasGotos.Check sThen || HasGotos.Check sElse then
@@ -199,12 +204,13 @@ type FreeNestedGotos(?loopStart, ?loopEnd, ?increment) =
             let endIf = Id.New "$endif"
             Block [
                 If (cond, Empty, Goto elseStart)
-                this.TransformStatement sThen
+                this.TransformStatement' sThen
                 Goto endIf
-                Labeled(elseStart, this.TransformStatement sElse)
+                Labeled(elseStart, this.TransformStatement' sElse)
                 Labeled(endIf, Empty)
-            ]   
-        else If(cond, sThen, sElse)
+            ]
+            |> VSome
+        else VNone
 
     override this.TransformYield(expr) =
         match expr with
@@ -215,12 +221,13 @@ type FreeNestedGotos(?loopStart, ?loopEnd, ?increment) =
                 Labeled (yieldId, Empty)
             ]     
         | _ -> Yield None
+        |> VSome
 
     override this.TransformTryWith(body, e, catch) =
         if HasGotos.Check body || HasGotos.Check catch then
             let tryStart = Id.New "$try"
-            Labeled(tryStart, TryWith(this.TransformStatement body, e, this.TransformStatement catch))    
-        else TryWith(body, e, catch)
+            Labeled(tryStart, TryWith(this.TransformStatement' body, e, this.TransformStatement' catch)) |> VSome
+        else VNone
 
     override this.TransformTryFinally(body, final) =
         if HasGotos.Check body || HasGotos.Check final then
@@ -233,10 +240,11 @@ type FreeNestedGotos(?loopStart, ?loopEnd, ?increment) =
 //                TryWith(this.TransformStatement body, Some e, VarSetStatement(caught, e))
 //            ]
             Labeled(tryStart, 
-                TryFinally(this.TransformStatement body, this.TransformStatement final)
+                TryFinally(this.TransformStatement' body, this.TransformStatement' final)
 //                TryFinally(this.TransformStatement body, Labeled(finallyStart, this.TransformStatement final))
             )
-        else TryFinally(body, final)
+            |> VSome
+        else VNone
 
 //        if Option.isSome (HasGotos.Check trBody) || Option.isSome (HasGotos.Check trCatch) then
 //            
@@ -252,14 +260,14 @@ type ExtractVarDeclarations() =
 
     override this.TransformVarDeclaration(i, v) =
         vars.Add i
-        ExprStatement (VarSet(i, this.TransformExpression v))
+        ExprStatement (VarSet(i, this.TransformExpression' v)) |> VSome
 
     override this.TransformLet(i, v, b) =
         vars.Add i
-        Sequential [ VarSet(i, this.TransformExpression v); this.TransformExpression b ]
+        Sequential [ VarSet(i, this.TransformExpression' v); this.TransformExpression' b ] |> VSome
 
     override this.TransformFunction(a, b) =
-        Function(a, b)
+        VNone
      
 type State =
     | SingleState of ResizeArray<Statement>
@@ -303,17 +311,18 @@ type ContinuationTransformer(labels) =
     member this.TryScope = tryScope
 
     override this.TransformGoto(a) =
-        gotoIndex labelLookup.[a]
+        gotoIndex labelLookup.[a] |> VSome
 
     override this.TransformContinuation(a, b) =
         Block [
             ExprStatement <| VarSet(stateVar, Value (Int labelLookup.[a]))
             this.Yield b
         ]
+        |> VSome
 
     override this.TransformFuncDeclaration(f, args, body) =
         localFunctions.Add(FuncDeclaration(f, args, body))  
-        Empty
+        VSome Empty
             
     member this.TransformMethodBodyInner(s: Statement) =
         let states = ResizeArray()
@@ -344,7 +353,7 @@ type ContinuationTransformer(labels) =
                     tryScope <- tryScope + 1
                     addStatements body
                     tryScope <- tryScope - 1
-                    currentScope.Add (Catch (e, CombineStatements [ this.TransformStatement catch; gotoIndex (nextIndex + 1) ] ))
+                    currentScope.Add (Catch (e, CombineStatements [ this.TransformStatement' catch; gotoIndex (nextIndex + 1) ] ))
                 newState()
                 currentScope.Add (SingleState lastState)
             | Labeled(_, TryFinally(body, final)) ->
@@ -352,13 +361,13 @@ type ContinuationTransformer(labels) =
                     tryScope <- tryScope + 1
                     addStatements body
                     tryScope <- tryScope - 1
-                    currentScope.Add (Finally (this.TransformStatement final))
+                    currentScope.Add (Finally (this.TransformStatement' final))
             | Labeled (_, ls) ->
                 newState()
                 currentScope.Add (SingleState lastState)
                 addStatements ls
             | _ -> 
-                lastState.Add (this.TransformStatement s)
+                lastState.Add (this.TransformStatement' s)
         addStatements s
         
         let startAndLast l =
@@ -442,12 +451,12 @@ type GeneratorTransformer(labels) =
         ]
 
     override this.TransformYield(_) =
-        Return (Value (Bool false))
+        Return (Value (Bool false)) |> VSome
 
     member this.TransformMethodBody(s: Statement) =
         let extract = ExtractVarDeclarations()
         let inner =
-            this.TransformMethodBodyInner s |> extract.TransformStatement
+            this.TransformMethodBodyInner s |> extract.TransformStatement'
 
         Return <| Object [ 
             "GetEnumerator", 
@@ -475,8 +484,11 @@ let addLastReturnIfNeeded v s =
         | Return _ -> true
         | Block ss -> endsWithReturn (List.last ss) 
         | _ -> false
-    if endsWithReturn s then s else
-        CombineStatements [ s; Return v ]
+    if endsWithReturn s then VNone else
+        CombineStatements [ s; Return v ] |> VSome
+
+let addLastReturnIfNeeded' v s =
+    (addLastReturnIfNeeded v s).Or(s)
 
 type AsyncTransformer(labels, returns) =
     inherit ContinuationTransformer(labels)
@@ -498,6 +510,7 @@ type AsyncTransformer(labels, returns) =
             yield ExprStatement <| Call(Some (Var task), NonGeneric Definitions.Task, TaskMethod.RunContinuations, [])
             yield Return Undefined   
         ]
+        |> VSome
 
     override this.TransformThrow(a) =
         if this.TryScope = 0 then
@@ -508,13 +521,14 @@ type AsyncTransformer(labels, returns) =
                 yield ExprStatement <| Call(Some (Var task), NonGeneric Definitions.Task, TaskMethod.RunContinuations, [])
                 yield Return Undefined
             ]
+            |> VSome
         else
-            Throw(a)
+            VNone
         
     member this.TransformMethodBody(s: Statement) =
         let extract = ExtractVarDeclarations()
         let inner =
-            this.TransformMethodBodyInner s |> extract.TransformStatement
+            this.TransformMethodBodyInner s |> extract.TransformStatement'
 
         Block [
             yield VarDeclaration(task, 
@@ -542,7 +556,7 @@ type GotoTransformer(labels) =
     member this.TransformMethodBody(s: Statement) =
         let extract = ExtractVarDeclarations()
         let inner =
-            this.TransformMethodBodyInner s |> extract.TransformStatement
+            this.TransformMethodBodyInner s |> extract.TransformStatement'
 
         Block [
             yield VarDeclaration(this.StateVar, Value (Int 0))
@@ -557,8 +571,8 @@ let eliminateGotos s =
     if HasGotos.Check s then 
         let g =
             s |> BreakStatement
-            |> addLastReturnIfNeeded Undefined
-            |> FreeNestedGotos().TransformStatement
-        g |> GotoTransformer(CollectLabels.Collect g).TransformMethodBody
+            |> addLastReturnIfNeeded' Undefined
+            |> FreeNestedGotos().TransformStatement'
+        g |> GotoTransformer(CollectLabels.Collect g).TransformMethodBody |> VSome
     else
-        s
+        VNone

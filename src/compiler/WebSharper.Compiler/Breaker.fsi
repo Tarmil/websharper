@@ -22,9 +22,10 @@
 [<AutoOpen>]
 module WebSharper.Compiler.Breaker
 
+open WebSharper.Core
 open WebSharper.Core.AST
 
-val removeLets : Expression -> Expression
+val removeLets : Expression -> VOption<Expression>
 
 val optimizer : Transformer
 

@@ -168,3 +168,80 @@ module Dict =
     let tryFind key (d: IDictionary<_,_>) =
         let mutable value = Unchecked.defaultof<'V>
         if d.TryGetValue(key, &value) then Some value else None
+
+[<Struct>]
+type VOption<'T> =
+    | VNone
+    | VSome of 'T
+
+module VOption =
+
+    let isSome = function
+        | VNone -> false
+        | VSome _ -> true
+
+    let isNone = function
+        | VNone -> true
+        | VSome _ -> false
+
+    let ofOption = function
+        | None -> VNone
+        | Some x -> VSome x
+
+    let toOption = function
+        | VNone -> None
+        | VSome x -> Some x
+
+    let map f = function
+        | VNone -> VNone
+        | VSome x -> VSome (f x)
+
+    let defaultValue (def: 'T) (o: VOption<'T>) =
+        match o with
+        | VNone -> def
+        | VSome x -> x
+
+    /// Transform a value, or return it if the transformation returned VNone.
+    let attempt (f: 'T -> VOption<'T>) (x: 'T) : 'T =
+        match f x with
+        | VNone -> x
+        | VSome y -> y
+
+    /// Returns VNone if f returns VNone for all items in l.
+    /// Otherwise, returns VSome (l |> List.map (fun x -> defaultValue x (f x)))
+    let bindList (f: 'T -> VOption<'T>) (l: list<'T>) : VOption<list<'T>> =
+        let res, hasSome =
+            List.mapFold (fun hasSome x ->
+                let trX = f x
+                defaultValue x trX, (hasSome || isSome trX)
+            ) false l
+        if hasSome then VSome res else VNone
+
+    /// Optimized equivalent to `List.map (fun x -> defaultValue x (f x))`
+    let bindList' (f: 'T -> VOption<'T>) (l: list<'T>) : list<'T> =
+        defaultValue l (bindList f l)
+
+    let bindOption (f: 'T -> VOption<'T>) (o: option<'T>) : VOption<option<'T>> =
+        match o with
+        | None -> VNone
+        | Some x -> map Some (f x)
+
+    let bindPair (f: 'T -> VOption<'T>) (g: 'U -> VOption<'U>) (x: 'T, y: 'U) : VOption<'T * 'U> =
+        match f x, g y with
+        | VNone, VNone -> VNone
+        | vx, vy -> VSome (defaultValue x vx, defaultValue y vy)
+
+    let chain (fs: list<'T -> VOption<'T>>) (init: 'T) : VOption<'T> =
+        let res, hasSome =
+            List.fold (fun (x, hasSome) f ->
+                match f x with
+                | VNone -> (x, hasSome)
+                | VSome y -> (y, true)
+            ) (init, false) fs
+        if hasSome then VSome res else VNone
+
+    let chain' (fs: list<'T -> VOption<'T>>) (init: 'T) : 'T =
+        List.fold (fun x f -> attempt f x) init fs
+
+type VOption<'T> with
+    member v.Or(x: 'T) = VOption.defaultValue x v

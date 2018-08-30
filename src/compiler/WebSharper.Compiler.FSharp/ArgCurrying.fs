@@ -162,58 +162,57 @@ type FuncArgTransformer(al: list<Id * FuncArgOptimization>, isInstance) =
     override this.TransformVar(v) =
         match cargs.TryGetValue v with
         | true, (CurriedFuncArg _ | TupledFuncArg _ as opt) ->
-            OptimizedFSharpArg(Var v, opt)
-        | _ -> Var v
+            OptimizedFSharpArg(Var v, opt) |> VSome
+        | _ -> VNone
     
     override this.TransformHole(i) =
         // only want this for holes that was optimized so that there is no let
         if noHoleLets then
             // only real arguments of instance methods was analyzed
             let j = if isInstance then i - 1 else i
-            if j = -1 then Hole 0 else
+            if j = -1 then Hole 0 |> VSome else
             match al.[j] with
             | _, (CurriedFuncArg _ | TupledFuncArg _ as opt) ->
-                OptimizedFSharpArg(Hole i, opt)
-            | _ -> Hole i
-        else Hole i
+                OptimizedFSharpArg(Hole i, opt) |> VSome
+            | _ -> VNone
+        else VNone
 
     override this.TransformCurriedApplication(func, args: Expression list) =
         match func with
         | I.Var f ->
             match cargs.TryGetValue f with
             | true, CurriedFuncArg a ->
-                let ucArgs, restArgs = args |> List.map this.TransformExpression |> List.splitAt a
+                let ucArgs, restArgs = args |> List.map this.TransformExpression' |> List.splitAt a
                 let inner = Application(Var f, ucArgs, NonPure, Some a)
-                curriedApplication inner restArgs
+                curriedApplication inner restArgs |> VSome
             | true, TupledFuncArg a ->
                 match args with
                 | t :: rArgs ->
-                    curriedApplication (this.TransformApplication(func, [t], NonPure, Some 1))
-                        (List.map this.TransformExpression rArgs)
+                    curriedApplication (this.TransformApplication'(func, [t], NonPure, Some 1))
+                        (List.map this.TransformExpression' rArgs)
+                    |> VSome
                 | _ -> failwith "tupled func must have arguments"
             | _ -> base.TransformCurriedApplication(func, args)
         | _ -> base.TransformCurriedApplication(func, args)
 
     override this.TransformApplication(func, args, p, l) =
-        let normal() =
-            Application(this.TransformExpression func, List.map this.TransformExpression args, p, l)
         match func with
         | I.Var f ->
             match cargs.TryGetValue f with
             | true, TupledFuncArg a ->
                 match args with
                 | [ I.NewArray es ] ->
-                    Application(Var f, List.map this.TransformExpression es, p, Some (List.length es))
+                    Application(Var f, List.map this.TransformExpression' es, p, Some (List.length es)) |> VSome
                 | _ ->
                     failwith "tupled function not applied with a known tuple"    
-            | _ -> normal()    
-        | _ -> normal()
+            | _ -> base.TransformApplication(func, args, p, l)
+        | _ -> base.TransformApplication(func, args, p, l)
 
     member this.TransformBody e =
         match e with
         | Let (_, Hole _, _) -> noHoleLets <- false 
         | _ -> ()
-        this.TransformExpression e
+        this.TransformExpression' e
     
 type ResolveFuncArgs(comp: Compilation) =
     let members = Dictionary<Member, NotResolvedMethod * Id list * bool>()

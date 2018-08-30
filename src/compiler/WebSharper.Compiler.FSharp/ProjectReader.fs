@@ -440,7 +440,7 @@ let rec private transformClass (sc: Lazy<_ * StartupCode>) (comp: Compilation) (
                         match fromRD with
                         | Some rd ->
                             // TODO: curried argument optimization for ReflectedDefinition
-                            None, FixThisScope().Fix(rd)
+                            None, FixThisScope().Fix'(rd)
                         | _ ->
                         let a, t = getArgsAndThis()
                         let argsAndVars = 
@@ -499,19 +499,19 @@ let rec private transformClass (sc: Lazy<_ * StartupCode>) (comp: Compilation) (
                                         comp.AddError(tryGetExprSourcePos b, SourceError e.Message)
                                         errorPlaceholder
                                 else b
-                            let b = FixThisScope().Fix(b)      
+                            let b = FixThisScope().Fix'(b)      
                             if List.isEmpty args && meth.IsModuleValueOrMember then 
                                 if isModulePattern then
                                     let scDef, (scContent, scFields) = sc.Value   
                                     let var = Id.New(mut = false)
-                                    scContent.Add (VarDeclaration (var, TailCalls.optimize None inlinesOfClass b))
+                                    scContent.Add (VarDeclaration (var, TailCalls.optimize' None inlinesOfClass b))
                                     Var var
                                 elif isInline then
                                     b
                                 else
                                     let scDef, (scContent, scFields) = sc.Value   
                                     let name = Resolve.getRenamed meth.CompiledName scFields
-                                    scContent.Add (ExprStatement (ItemSet(Self, Value (String name), TailCalls.optimize None inlinesOfClass b)))
+                                    scContent.Add (ExprStatement (ItemSet(Self, Value (String name), TailCalls.optimize' None inlinesOfClass b)))
                                     Lambda([], FieldGet(None, NonGeneric scDef, name))
                             else
                                 let thisVar, vars =
@@ -544,7 +544,7 @@ let rec private transformClass (sc: Lazy<_ * StartupCode>) (comp: Compilation) (
                                 if isInline then
                                     let b = 
                                         match thisVar with
-                                        | Some t -> ReplaceThisWithVar(t).TransformExpression(b)
+                                        | Some t -> ReplaceThisWithVar(t).TransformExpression'(b)
                                         | _ -> b
                                     makeExprInline (Option.toList thisVar @ vars) b
                                 else 
@@ -564,7 +564,7 @@ let rec private transformClass (sc: Lazy<_ * StartupCode>) (comp: Compilation) (
                             | Member.Method (_, m) -> 
                                 Some (def, m) 
                             | _ -> None
-                        curriedArgs, TailCalls.optimize currentMethod inlinesOfClass res
+                        curriedArgs, TailCalls.optimize' currentMethod inlinesOfClass res
                     with e ->
                         error (sprintf "Error reading definition: %s at %s" e.Message e.StackTrace)
                         None, errorPlaceholder

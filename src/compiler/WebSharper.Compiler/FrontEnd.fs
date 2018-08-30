@@ -144,7 +144,7 @@ let CreateResources (comp: Compilation option) (refMeta: M.Info) (current: M.Inf
     let pkg =
         match comp, closures with
         | Some comp, Some moveToTop ->
-            let clPkg = pkg |> Closures.ExamineClosures(comp, moveToTop).TransformExpression 
+            let clPkg = pkg |> Closures.ExamineClosures(comp, moveToTop).TransformExpression'
             TimedStage "Closure analyzation"
             clPkg
         | _ -> pkg
@@ -154,9 +154,9 @@ let CreateResources (comp: Compilation option) (refMeta: M.Info) (current: M.Inf
     
     let pkg =
         if sourceMap then
-            TransformSourcePositions(assemblyName).TransformExpression pkg
+            TransformSourcePositions(assemblyName).TransformExpression' pkg
         else
-            removeSourcePos.TransformExpression pkg
+            removeSourcePos.TransformExpression' pkg
 
     let addRes name path data = 
         match data with
