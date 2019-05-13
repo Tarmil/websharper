@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <DisableAutoSetFscCompilerPath>true</DisableAutoSetFscCompilerPath>
+  </PropertyGroup>
+</Project>

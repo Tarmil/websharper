@@ -1,15 +1,16 @@
+#r "paket: groupref build //"
 #load "paket-files/wsbuild/github.com/dotnet-websharper/build-script/WebSharper.Fake.fsx"
-#I "packages/build/AjaxMin/lib/net40"
-#r "AjaxMin.dll"
-#I "packages/build/Mono.Cecil/lib/net40"
-#r "Mono.Cecil.dll"
 #r "System.Xml.Linq"
 
 open System.IO
 open System.Xml
 open System.Xml.Linq
 open System.Xml.XPath
-open Fake
+open Fake.Core
+open Fake.Core.TargetOperators
+open Fake.DotNet
+open Fake.IO
+open Fake.IO.FileSystemOperators
 open WebSharper.Fake
 
 let version = "4.5"
@@ -19,7 +20,7 @@ let baseVersion =
     version + match pre with None -> "" | Some x -> "-" + x
     |> Paket.SemVer.Parse
 
-let specificFw = environVarOrNone "WS_TARGET_FW"
+let specificFw = Environment.environVarOrNone "WS_TARGET_FW"
 
 let targets = MakeTargets {
     WSTargets.Default (fun () -> ComputeVersion (Some baseVersion)) with
@@ -29,36 +30,28 @@ let targets = MakeTargets {
                     match specificFw with
                     | None -> sln
                     | Some d -> d </> sln
-                match environVarOrNone "OS" with
-                | Some "Windows_NT" ->
-                    BuildAction.Projects [sln]
-                | _ ->
-                    BuildAction.Custom <| fun mode ->
-                        DotNetCli.Build <| fun p ->
-                            { p with
-                                Project = sln
-                                Configuration = mode.ToString()
-                            }
+                BuildAction.Projects [sln]
             let dest mode lang =
                 __SOURCE_DIRECTORY__ </> "build" </> mode.ToString() </> lang
             let publishExe (mode: BuildMode) fw input output explicitlyCopyFsCore =
                 let outputPath =
                     __SOURCE_DIRECTORY__ </> "build" </> mode.ToString() </> output </> fw </> "deploy"
-                DotNetCli.Publish <| fun p ->
+                DotNet.publish <| fun p ->
                     { p with
-                        Project = input
-                        Framework = fw
-                        Output = outputPath
-                        AdditionalArgs = ["--no-dependencies"; "--no-restore"]
-                        Configuration = mode.ToString() }
+                        Framework = Some fw
+                        OutputPath = Some outputPath
+                        NoBuild = true
+                        NoRestore = true
+                        Configuration = mode.AsDotNet }
+                <| input
                 if explicitlyCopyFsCore then
                     let fsharpCoreLib = __SOURCE_DIRECTORY__ </> "packages/compilers/FSharp.Core/lib/netstandard1.6"
-                    [ 
-                        fsharpCoreLib </> "FSharp.Core.dll" 
-                        fsharpCoreLib </> "FSharp.Core.sigdata" 
-                        fsharpCoreLib </> "FSharp.Core.optdata" 
-                    ] 
-                    |> Copy outputPath                
+                    [
+                        "FSharp.Core.dll"
+                        "FSharp.Core.sigdata"
+                        "FSharp.Core.optdata"
+                    ]
+                    |> List.iter (fun f -> File.Copy(fsharpCoreLib </> f, outputPath </> f))
             BuildAction.Multiple [
                 buildSln "WebSharper.Compiler.sln"
                 BuildAction.Custom <| fun mode ->
@@ -77,13 +70,17 @@ let NeedsBuilding input output =
 
 let Minify () =
     let minify (path: string) =
-        let min = Microsoft.Ajax.Utilities.Minifier()
         let out = Path.ChangeExtension(path, ".min.js")
         if NeedsBuilding path out then
             let raw = File.ReadAllText(path)
-            let mjs = min.MinifyJavaScript(raw)
-            File.WriteAllText(Path.ChangeExtension(path, ".min.js"), mjs)
-            stdout.WriteLine("Written {0}", out)
+            let mjs = NUglify.Uglify.Js(raw)
+            if mjs.HasErrors then
+                for e in mjs.Errors do
+                    Trace.traceErrorfn "%A" e
+                failwithf "Failed to minify %s" path
+            else
+                File.WriteAllText(Path.ChangeExtension(path, ".min.js"), mjs.Code)
+                stdout.WriteLine("Written {0}", out)
     minify "src/compiler/WebSharper.Core.JavaScript/Runtime.js"
     minify "src/stdlib/WebSharper.Main/Json.js"
     minify "src/stdlib/WebSharper.Main/AnimFrame.js"
@@ -105,12 +102,12 @@ let MakeNetStandardTypesList() =
 let AddToolVersions() =
     let lockFile =
         Paket.LockFile.LoadFrom(__SOURCE_DIRECTORY__ </> "paket.lock")
-    let roslynVersion = 
+    let roslynVersion =
         lockFile
             .GetGroup(Paket.Domain.GroupName "main")
             .GetPackage(Paket.Domain.PackageName "Microsoft.CodeAnalysis.CSharp")
             .Version.AsString
-    let fcsVersion = 
+    let fcsVersion =
         lockFile
             .GetGroup(Paket.Domain.GroupName "fcs")
             .GetPackage(Paket.Domain.PackageName "FSharp.Compiler.Service")
@@ -126,7 +123,7 @@ let AddToolVersions() =
     if not (File.Exists(outFile) && t = File.ReadAllText(outFile)) then
         File.WriteAllText(outFile, t)
 
-Target "Prepare" <| fun () ->
+Target.create "Prepare" <| fun _ ->
     Minify()
     MakeNetStandardTypesList()
     AddToolVersions()
@@ -135,7 +132,7 @@ targets.AddPrebuild "Prepare"
 
 // Generate App.config redirects from the actual assemblies being used,
 // because Paket gets some versions wrong.
-Target "GenAppConfig" <| fun () ->
+Target.create "GenAppConfig" <| fun _ ->
     [
         "build/Release/CSharp/net461/deploy", "ZafirCs.exe.config"
         "build/Release/FSharp/net461/deploy", "wsfsc.exe.config"
@@ -170,12 +167,6 @@ Target "GenAppConfig" <| fun () ->
     ==> "GenAppConfig"
     ==> "WS-Package"
 
-Target "Build" DoNothing
-targets.BuildDebug ==> "Build"
-
-Target "CI-Release" DoNothing
-targets.CommitPublish ==> "CI-Release"
-
 let rm_rf x =
     if Directory.Exists(x) then
         // Fix access denied issue deleting a read-only *.idx file in .git
@@ -185,19 +176,14 @@ let rm_rf x =
         Directory.Delete(x, true)
     elif File.Exists(x) then File.Delete(x)
 
-Target "Clean" <| fun () ->
+Target.create "Clean" <| fun _ ->
     rm_rf "netcore"
     rm_rf "netfx"
 "WS-Clean" ==> "Clean"
 
-Target "Run" <| fun () ->
-    shellExec {
-        defaultParams with
-            Program = @"C:\Program Files (x86)\Microsoft Visual Studio 14.0\Common7\IDE\devenv.exe"
-            CommandLine = "/r WebSharper.sln"
-    }
-    |> ignore
+Target.create "Run" <| fun _ ->
+    shell @"C:\Program Files (x86)\Microsoft Visual Studio 14.0\Common7\IDE\devenv.exe" "/r WebSharper.sln"
 
 "Build" ==> "Run"
 
-RunTargetOrDefault "Build"
+Target.runOrDefaultWithArguments "Build"
